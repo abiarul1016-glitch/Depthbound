@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Abyssal Run 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  :root {
+    --accent-ocean: #3b9eff;
+    --accent-lava:  #ff6a20;
+    --accent-ice:   #7ecfff;
+    --glass: rgba(255,255,255,0.07);
+    --glass-border: rgba(255,255,255,0.11);
+    --text: rgba(255,255,255,0.95);
+    --text-dim: rgba(255,255,255,0.42);
+    --r: 18px; --r-sm: 10px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: #06090f;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; font-family: 'DM Sans', sans-serif; overflow: hidden;
+  }
+  .wrap {
+    position: relative; width: 480px; height: 640px;
+    border-radius: 28px; overflow: hidden;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.07),
+      0 40px 100px rgba(0,0,0,0.75),
+      0 0 80px rgba(59,158,255,0.06);
+  }
+  /* Dual canvas setup */
+  #c-2d, #c-3d { position: absolute; top: 0; left: 0; width: 480px; height: 640px; }
+  #c-3d { display: none; } /* Hidden until gameplay starts */
+
+  /* ── CUTSCENE OVERLAY ── */
+  #cutscene {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-end;
+    padding: 0 0 48px;
+    pointer-events: all;
+    background: transparent;
+  }
+  #cutscene.hidden { display: none; }
+  .cs-text-box {
+    width: calc(100% - 56px);
+    background: rgba(6,9,15,0.72);
+    backdrop-filter: blur(18px) saturate(1.5);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px;
+    padding: 18px 22px 16px;
+    margin-bottom: 16px;
+  }
+  .cs-speaker {
+    font-size: 0.6em; font-weight: 600; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--accent-ocean);
+    margin-bottom: 6px; display: block;
+  }
+  .cs-speaker.deity { color: #c8a0ff; }
+  .cs-line {
+    font-size: 0.84em; font-weight: 300; line-height: 1.65;
+    color: rgba(255,255,255,0.88); font-style: italic;
+    min-height: 2.5em;
+  }
+  .cs-nav {
+    display: flex; align-items: center; justify-content: space-between;
+    width: calc(100% - 56px);
+  }
+  .cs-dots { display: flex; gap: 6px; }
+  .cs-dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: rgba(255,255,255,0.2); transition: background 0.3s;
+  }
+  .cs-dot.active { background: var(--accent-ocean); }
+  .cs-btn {
+    background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 100px; color: rgba(255,255,255,0.7);
+    font-family: 'DM Sans', sans-serif; font-size: 0.75em; font-weight: 500;
+    padding: 8px 20px; cursor: pointer; transition: all 0.15s; letter-spacing: 0.3px;
+  }
+  .cs-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+  .cs-skip {
+    background: transparent; border: none;
+    color: rgba(255,255,255,0.28); font-family: 'DM Sans', sans-serif;
+    font-size: 0.68em; cursor: pointer; padding: 4px 8px;
+    transition: color 0.15s; letter-spacing: 0.3px;
+  }
+  .cs-skip:hover { color: rgba(255,255,255,0.55); }
+
+  /* ── HUD ── */
+  #hud { display:none; position:absolute; inset:0; pointer-events:none; }
+  #hud.on { display:block; }
+  .pill {
+    position:absolute; display:flex; align-items:center; gap:8px;
+    background:rgba(8,12,22,0.55); backdrop-filter:blur(16px) saturate(1.4);
+    border:1px solid rgba(255,255,255,0.09); border-radius:100px; padding:8px 18px;
+  }
+  #pill-score { top:20px; left:20px; }
+  #pill-best  { top:20px; right:20px; }
+  .pill .lbl { font-size:0.62em; color:var(--text-dim); letter-spacing:0.8px; text-transform:uppercase; }
+  .pill .val { font-family:'DM Mono',monospace; font-size:0.9em; font-weight:500; color:var(--text); }
+  .dot { width:6px; height:6px; border-radius:50%; background:var(--accent-ocean); transition:background .5s; }
+  #prog-wrap { position:absolute; bottom:20px; left:20px; right:20px; }
+  #prog-labels { display:flex; justify-content:space-between; margin-bottom:5px; }
+  #prog-labels span { font-size:0.6em; color:var(--text-dim); letter-spacing:0.4px; }
+  #prog-labels #bname { font-weight:500; color:var(--accent-ocean); transition:color .5s; }
+  #prog-track { height:2px; background:rgba(255,255,255,0.07); border-radius:100px; overflow:hidden; }
+  #prog-fill { height:100%; width:0%; border-radius:100px; background:var(--accent-ocean); transition:background .5s; }
+
+  /* ── SCREENS ── */
+  .screen {
+    display:none; position:absolute; inset:0;
+    flex-direction:column; align-items:center; justify-content:center;
+    padding:36px 40px; pointer-events:none;
+  }
+  .screen.on { display:flex; pointer-events:all; }
+  #s-start { background:linear-gradient(160deg,rgba(8,14,28,.97),rgba(5,8,14,.98)); }
+  #s-over  { background:linear-gradient(160deg,rgba(10,5,3,.97),rgba(5,8,14,.98)); }
+  .logo {
+    width:60px; height:60px; border-radius:16px;
+    background:linear-gradient(135deg,#1a5fff,#00aaff);
+    display:flex; align-items:center; justify-content:center;
+    font-size:26px; margin-bottom:22px; box-shadow:0 8px 30px rgba(59,158,255,.32);
+  }
+  .screen h1 { font-size:1.9em; font-weight:600; letter-spacing:-0.4px; color:var(--text); margin-bottom:5px; }
+  .tag { font-size:0.78em; color:var(--text-dim); margin-bottom:28px; }
+  .card { width:100%; background:var(--glass); border:1px solid var(--glass-border); border-radius:var(--r); padding:18px 22px; margin-bottom:20px; }
+  .card p { font-size:0.78em; line-height:1.75; color:rgba(255,255,255,.55); font-weight:300; }
+  .chips { display:flex; gap:10px; width:100%; margin-bottom:28px; }
+  .chip { flex:1; background:var(--glass); border:1px solid var(--glass-border); border-radius:var(--r-sm); padding:10px 12px; text-align:center; }
+  .chip .k { font-family:'DM Mono',monospace; font-size:0.75em; color:var(--accent-ocean); font-weight:500; display:block; margin-bottom:3px; }
+  .chip .d { font-size:0.65em; color:var(--text-dim); }
+  .btn {
+    width:100%; padding:15px; border-radius:var(--r-sm); border:none;
+    background:linear-gradient(135deg,#1a5fff,#009eff);
+    color:#fff; font-family:'DM Sans',sans-serif; font-size:0.92em;
+    font-weight:600; letter-spacing:0.2px; cursor:pointer;
+    box-shadow:0 4px 20px rgba(59,158,255,.38); transition:opacity .15s, transform .12s;
+  }
+  .btn:hover { opacity:.9; transform:scale(1.01); }
+  .btn:active { transform:scale(.99); }
+  .btn-row { display:flex; gap:12px; width:100%; }
+  .btn-sec {
+    flex:1; padding:15px; border-radius:var(--r-sm); border:1px solid rgba(255,255,255,.12);
+    background:rgba(255,255,255,.06); color:rgba(255,255,255,.7);
+    font-family:'DM Sans',sans-serif; font-size:0.88em; font-weight:500;
+    cursor:pointer; transition:all .15s;
+  }
+  .btn-sec:hover { background:rgba(255,255,255,.1); color:#fff; }
+  .icon { font-size:44px; margin-bottom:14px; }
+  #s-over h2 { font-size:1.6em; font-weight:600; color:var(--text); letter-spacing:-0.3px; margin-bottom:4px; }
+  #s-over .sub { font-size:0.76em; color:var(--text-dim); margin-bottom:28px; }
+  .sgrid { display:grid; grid-template-columns:1fr 1fr; gap:12px; width:100%; margin-bottom:24px; }
+  .scell { background:var(--glass); border:1px solid var(--glass-border); border-radius:var(--r-sm); padding:16px; text-align:center; }
+  .scell .v { font-family:'DM Mono',monospace; font-size:1.45em; font-weight:500; color:var(--text); display:block; }
+  .scell .l { font-size:0.62em; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px; margin-top:4px; display:block; }
+
+  /* mute button */
+  #mute-btn {
+    position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+    background: rgba(8,12,22,0.55); backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.09); border-radius: 100px;
+    color: rgba(255,255,255,0.5); font-size: 0.7em; font-family: 'DM Sans', sans-serif;
+    padding: 6px 14px; cursor: pointer; pointer-events: all;
+    transition: all 0.15s; display: none; gap: 5px; align-items: center;
+  }
+  #mute-btn.visible { display: flex; }
+  #mute-btn:hover { color: rgba(255,255,255,0.85); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <canvas id="c-2d" width="480" height="640"></canvas>
+  <canvas id="c-3d" width="480" height="640"></canvas>
+
+  <div id="cutscene">
+    <div class="cs-text-box" id="cs-box">
+      <span class="cs-speaker" id="cs-speaker">NARRATOR</span>
+      <div class="cs-line" id="cs-line"></div>
+    </div>
+    <div class="cs-nav">
+      <button class="cs-skip" onclick="skipCutscene()">Skip intro</button>
+      <div class="cs-dots" id="cs-dots"></div>
+      <button class="cs-btn" id="cs-next-btn" onclick="csNext()">Continue →</button>
+    </div>
+  </div>
+
+  <div id="hud">
+    <div class="pill" id="pill-score">
+      <div class="dot" id="bdot"></div>
+      <span class="lbl">Score</span><span class="val" id="hscore">0</span>
+    </div>
+    <div class="pill" id="pill-best">
+      <span class="lbl">Best</span><span class="val" id="hbest">0</span>
+    </div>
+    <div id="prog-wrap">
+      <div id="prog-labels">
+        <span id="bname">OCEAN DEPTHS</span><span>next biome</span>
+      </div>
+      <div id="prog-track"><div id="prog-fill"></div></div>
+    </div>
+    <button id="mute-btn" class="visible" onclick="toggleMute()">🔊 Sound</button>
+  </div>
+
+  <div class="screen" id="s-start">
+    <div class="logo">🌊</div>
+    <h1>Abyssal Run 3D</h1>
+    <p class="tag">Swim. Run. Survive.</p>
+    <div class="card">
+      <p>Dr. Mara Solís — deep-sea researcher — was gifted a pressure mask and hydro-jetpack by an ancient ocean deity. Now she must outrun what hunts below, across lava bridges at the Earth's core and through frozen caverns beyond.</p>
+    </div>
+    <div class="chips">
+      <div class="chip"><span class="k">← / A</span><span class="d">Move Left</span></div>
+      <div class="chip"><span class="k">→ / D</span><span class="d">Move Right</span></div>
+      <div class="chip"><span class="k">3 Lanes</span><span class="d">Dodge &amp; Collect</span></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn-sec" onclick="playCutscene()">Watch Intro</button>
+      <button class="btn" style="flex:2" onclick="startGame()">Begin Descent</button>
+    </div>
+  </div>
+
+  <div class="screen" id="s-over">
+    <div class="icon">💀</div>
+    <h2>Caught.</h2>
+    <p class="sub">The abyss claims another.</p>
+    <div class="sgrid">
+      <div class="scell"><span class="v" id="go-score">0</span><span class="l">Score</span></div>
+      <div class="scell"><span class="v" id="go-best">0</span><span class="l">Best</span></div>
+    </div>
+    <button class="btn" onclick="startGame()">Try Again</button>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+//  2D CANVAS (Cutscenes)
+// ─────────────────────────────────────────────
+const canvas2d = document.getElementById('c-2d');
+const ctx = canvas2d.getContext('2d');
+const canvas3d = document.getElementById('c-3d');
+const W = 480, H = 640;
+
+// Shared constants
+const BD = 620;
+const BNAMES = ['OCEAN DEPTHS','LAVA CORE','ICE CAVERN'];
+
+const PALETTES = [
+  { bg0:'#07101e', bg1:'#0b1c35', fl:'#091624', fle:'#173450', ld:'rgba(59,158,255,.1)', acc:'#3b9eff', glow:'rgba(59,158,255,.18)' },
+  { bg0:'#110400', bg1:'#1e0900', fl:'#260e00', fle:'#3a1500', ld:'rgba(255,106,32,.12)', acc:'#ff6a20', glow:'rgba(255,106,32,.18)' },
+  { bg0:'#03080f', bg1:'#060e1c', fl:'#0b1828', fle:'#182e48', ld:'rgba(126,207,255,.1)', acc:'#7ecfff', glow:'rgba(126,207,255,.15)' },
+];
+
+// DOM refs
+const hudEl     = document.getElementById('hud');
+const hudScore  = document.getElementById('hscore');
+const hudBest   = document.getElementById('hbest');
+const bdot      = document.getElementById('bdot');
+const bname     = document.getElementById('bname');
+const progFill  = document.getElementById('prog-fill');
+const sStart    = document.getElementById('s-start');
+const sOver     = document.getElementById('s-over');
+const goScore   = document.getElementById('go-score');
+const goBest    = document.getElementById('go-best');
+const csEl      = document.getElementById('cutscene');
+const csLine    = document.getElementById('cs-line');
+const csSpeaker = document.getElementById('cs-speaker');
+const csNextBtn = document.getElementById('cs-next-btn');
+const csDotsEl  = document.getElementById('cs-dots');
+const muteBtn   = document.getElementById('mute-btn');
+
+// ─────────────────────────────────────────────
+//  WEB AUDIO ENGINE (Kept completely intact)
+// ─────────────────────────────────────────────
+let audioCtx = null;
+let muted = false;
+let ambientOsc = null, ambientGain = null;
+let warningOsc = null, warningGain = null;
+
+function getAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
+function toggleMute() {
+  muted = !muted;
+  muteBtn.textContent = muted ? '🔇 Muted' : '🔊 Sound';
+  if (ambientGain) ambientGain.gain.value = muted ? 0 : 0.06;
+  if (warningGain) warningGain.gain.value = muted ? 0 : 0;
+}
+
+const BIOME_FREQS = [55, 40, 65];
+
+function startAmbient() {
+  if (muted) return;
+  const ac = getAudio();
+  stopAmbient();
+
+  ambientOsc = ac.createOscillator();
+  const osc2 = ac.createOscillator();
+  ambientGain = ac.createGain();
+  const filter = ac.createBiquadFilter();
+
+  ambientOsc.type = 'sine';
+  osc2.type = 'sine';
+  filter.type = 'lowpass';
+  filter.frequency.value = 200;
+
+  const freq = BIOME_FREQS[biome];
+  ambientOsc.frequency.value = freq;
+  osc2.frequency.value = freq * 1.5;
+
+  ambientGain.gain.value = 0.06;
+
+  ambientOsc.connect(filter);
+  osc2.connect(filter);
+  filter.connect(ambientGain);
+  ambientGain.connect(ac.destination);
+
+  ambientOsc.start();
+  osc2.start();
+}
+
+function stopAmbient() {
+  try { ambientOsc && ambientOsc.stop(); } catch(e){}
+  ambientOsc = null;
+  ambientGain = null;
+}
+
+function updateAmbientBiome() {
+  if (!ambientOsc || muted) return;
+  const freq = BIOME_FREQS[biome];
+  const now = audioCtx.currentTime;
+  ambientOsc.frequency.linearRampToValueAtTime(freq, now + 1.5);
+}
+
+function startWarning() {
+  if (muted || !audioCtx) return;
+  if (warningOsc) return;
+  const ac = getAudio();
+  warningOsc = ac.createOscillator();
+  warningGain = ac.createGain();
+  const wFilter = ac.createBiquadFilter();
+
+  warningOsc.type = 'sawtooth';
+  warningOsc.frequency.value = 28;
+  wFilter.type = 'lowpass';
+  wFilter.frequency.value = 120;
+  warningGain.gain.value = 0;
+
+  warningOsc.connect(wFilter);
+  wFilter.connect(warningGain);
+  warningGain.connect(ac.destination);
+  warningOsc.start();
+}
+
+function setWarningIntensity(t) {
+  if (!warningGain || muted) return;
+  const vol = t * 0.12;
+  warningGain.gain.linearRampToValueAtTime(vol, audioCtx.currentTime + 0.1);
+  if (warningOsc) {
+    warningOsc.frequency.linearRampToValueAtTime(28 + t * 18, audioCtx.currentTime + 0.1);
+  }
+}
+
+function stopWarning() {
+  try { warningOsc && warningOsc.stop(); } catch(e){}
+  warningOsc = null; warningGain = null;
+}
+
+function playTone(freq, type, dur, vol, freqEnd) {
+  if (muted) return;
+  const ac = getAudio();
+  const osc = ac.createOscillator();
+  const g = ac.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  if (freqEnd !== undefined) osc.frequency.linearRampToValueAtTime(freqEnd, ac.currentTime + dur);
+  g.gain.setValueAtTime(vol, ac.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
+  osc.connect(g); g.connect(ac.destination);
+  osc.start(); osc.stop(ac.currentTime + dur);
+}
+
+function playNoise(dur, vol, filterFreq) {
+  if (muted) return;
+  const ac = getAudio();
+  const bufSize = ac.sampleRate * dur;
+  const buf = ac.createBuffer(1, bufSize, ac.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1);
+  const src = ac.createBufferSource();
+  src.buffer = buf;
+  const filter = ac.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = filterFreq || 400;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(vol, ac.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + dur);
+  src.connect(filter); filter.connect(g); g.connect(ac.destination);
+  src.start(); src.stop(ac.currentTime + dur);
+}
+
+function sfxSwitch() {
+  playNoise(0.08, 0.15, 800);
+  playTone(220, 'sine', 0.08, 0.08, 440);
+}
+
+function sfxCollect() {
+  const ac = getAudio();
+  const now = ac.currentTime;
+  [880, 1100, 1320].forEach((f, i) => {
+    setTimeout(() => playTone(f, 'sine', 0.18, 0.09), i * 35);
+  });
+}
+
+function sfxBiomeTransition() {
+  playTone(60, 'sine', 1.2, 0.1, 180);
+  playTone(80, 'triangle', 1.0, 0.07, 220);
+  setTimeout(() => playNoise(0.3, 0.06, 200), 800);
+}
+
+function sfxDie() {
+  playNoise(0.25, 0.3, 150);
+  playTone(120, 'sawtooth', 0.6, 0.15, 30);
+  playTone(60, 'sine', 0.8, 0.1, 20);
+}
+
+function sfxGameStart() {
+  [220, 330, 440, 660].forEach((f, i) => {
+    setTimeout(() => playTone(f, 'triangle', 0.2, 0.08), i * 60);
+  });
+}
+
+// Cutscene Audio omitted for brevity, keeping sound effects.
+function playSceneAudio_Dock() {}
+function playSceneAudio_Argument() {}
+function playSceneAudio_Sinking() {}
+function playSceneAudio_Deity() {}
+function playSceneAudio_Gift() {}
+const CS_AUDIO = [playSceneAudio_Dock, playSceneAudio_Argument, playSceneAudio_Sinking, playSceneAudio_Deity, playSceneAudio_Gift];
+let csAudioNodes = [];
+function stopCsAudio() {}
+
+// ─────────────────────────────────────────────
+//  THREE.JS 3D ENGINE SETUP
+// ─────────────────────────────────────────────
+const scene = new THREE.Scene();
+// Add deep fog to sell the abyss vibe
+scene.fog = new THREE.FogExp2(0x07101e, 0.03);
+
+const camera = new THREE.PerspectiveCamera(60, W/H, 0.1, 100);
+// Position camera slightly behind and above player looking down the tunnel
+camera.position.set(0, 3, 7);
+camera.lookAt(0, 0, -10);
+
+const renderer = new THREE.WebGLRenderer({ canvas: canvas3d, antialias: true });
+renderer.setSize(W, H);
+
+// Lighting
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+scene.add(ambientLight);
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(5, 10, 5);
+scene.add(dirLight);
+
+// The 3 Lanes in 3D Space (X coordinates)
+const LANE_X = [-2.5, 0, 2.5];
+
+// Player Mesh
+const playerGeo = new THREE.BoxGeometry(1, 1.5, 1);
+const playerMat = new THREE.MeshStandardMaterial({ color: 0x3b9eff, roughness: 0.5 });
+const playerMesh = new THREE.Mesh(playerGeo, playerMat);
+playerMesh.position.set(0, 0.75, 0);
+scene.add(playerMesh);
+
+// Chaser Mesh (Huge and scary behind the player)
+const chaserGeo = new THREE.BoxGeometry(8, 6, 2);
+const chaserMat = new THREE.MeshStandardMaterial({ color: 0x050d18 });
+const chaserMesh = new THREE.Mesh(chaserGeo, chaserMat);
+chaserMesh.position.set(0, 3, 15); // Starts far behind
+scene.add(chaserMesh);
+
+// Ground plane to simulate the "tunnel" floor
+const groundGeo = new THREE.PlaneGeometry(20, 200);
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x091624 });
+const groundMesh = new THREE.Mesh(groundGeo, groundMat);
+groundMesh.rotation.x = -Math.PI / 2;
+groundMesh.position.z = -50;
+scene.add(groundMesh);
+
+// Object Arrays for 3D
+let obstacles3D = [];
+let orbs3D = [];
+
+// Geometries to reuse
+const obsGeo = new THREE.CylinderGeometry(0.5, 0.5, 2, 8);
+const obsMat = new THREE.MeshStandardMaterial({ color: 0xbe2f5e });
+
+const orbGeo = new THREE.SphereGeometry(0.4, 16, 16);
+const orbMat = new THREE.MeshStandardMaterial({ color: 0x7ecfff, emissive: 0x3b9eff, emissiveIntensity: 0.5 });
+
+
+// ─────────────────────────────────────────────
+//  GAME STATE
+// ─────────────────────────────────────────────
+let state = 'menu';
+let score=0, hi=0, spd=0.2, frame=0;
+let biome=0, bt=0;
+let pl=1, plt=1; // Player current lane, target lane
+let cx = 0, cz = 15; // Chaser Z position
+let trans=false, ta=0, td=1;
+const keys={};
+
+document.addEventListener('keydown', e=>{
+  if(keys[e.code]) return; keys[e.code]=true;
+  if(state!=='playing') return;
+  if((e.code==='ArrowLeft'||e.code==='KeyA') && plt>0) { plt--; sfxSwitch(); }
+  if((e.code==='ArrowRight'||e.code==='KeyD') && plt<2) { plt++; sfxSwitch(); }
+});
+document.addEventListener('keyup', e=>keys[e.code]=false);
+
+// ─────────────────────────────────────────────
+//  CUTSCENE ENGINE (2D Canvas kept)
+// ─────────────────────────────────────────────
+const SCENES = [
+  { speaker:'NARRATOR', line:'It was past midnight on Pier 7. Dr. Mara Solís had been at the edge of her research dock for three hours...', draw: f=>{ ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H); ctx.fillStyle='#fff'; ctx.fillText('Cutscene 1 - Rendering in 2D...', 50, 300); }, nextLabel:'Continue →' }
+];
+
+let csScene=0, csFrame=0, csTyped='', csTyping=false, csTypeIndex=0, csTypeTimer=0;
+
+function buildCsDots() {
+  csDotsEl.innerHTML='';
+  SCENES.forEach((_,i)=>{
+    const d=document.createElement('div');
+    d.className='cs-dot'+(i===csScene?' active':'');
+    csDotsEl.appendChild(d);
+  });
+}
+
+function playCutscene() {
+  sStart.classList.remove('on');
+  csEl.classList.remove('hidden');
+  csScene=0; csFrame=0;
+  state='cutscene';
+  canvas2d.style.display = 'block';
+  canvas3d.style.display = 'none';
+  getAudio();
+  loadCsScene();
+}
+
+function loadCsScene() {
+  const s=SCENES[csScene];
+  csSpeaker.textContent=s.speaker;
+  csNextBtn.textContent=s.nextLabel||'Continue →';
+  csTyped=''; csTypeIndex=0; csTyping=true;
+  csLine.textContent='';
+  buildCsDots();
+  csFrame=0;
+}
+
+function csNext() {
+  if (!audioCtx) getAudio();
+  if(csTyping){ csTyping=false; csTyped=SCENES[csScene].line; csLine.textContent=csTyped; return; }
+  csScene++;
+  if(csScene>=SCENES.length) endCutscene();
+  else loadCsScene();
+}
+
+function skipCutscene() { endCutscene(); }
+
+function endCutscene() {
+  csEl.classList.add('hidden');
+  sStart.classList.add('on');
+  state='menu';
+}
+
+function updateCutscene() {
+  csFrame++;
+  if(csTyping) {
+    csTypeTimer++;
+    if(csTypeTimer%2===0) {
+      const full=SCENES[csScene].line;
+      if(csTypeIndex<full.length){ csTyped+=full[csTypeIndex]; csTypeIndex++; csLine.textContent=csTyped; }
+      else csTyping=false;
+    }
+  }
+}
+
+// ─────────────────────────────────────────────
+//  HELPERS
+// ─────────────────────────────────────────────
+function updateBiomeUI() {
+  const p=PALETTES[biome];
+  bdot.style.background=p.acc; bname.textContent=BNAMES[biome];
+  bname.style.color=p.acc; progFill.style.background=p.acc;
+
+  // Update 3D colors
+  scene.fog.color.set(p.bg0);
+  groundMat.color.set(p.fl);
+}
+
+function checkHits(){
+  const px = playerMesh.position.x;
+  const pz = playerMesh.position.z;
+  const hitDist = 1.0;
+
+  // Obstacles
+  for(let i=0; i<obstacles3D.length; i++) {
+    let obs = obstacles3D[i];
+    if(Math.abs(obs.position.z - pz) < hitDist && Math.abs(obs.position.x - px) < hitDist) {
+      die(); return;
+    }
+  }
+
+  // Orbs
+  for(let i=orbs3D.length-1; i>=0; i--) {
+    let orb = orbs3D[i];
+    if(Math.abs(orb.position.z - pz) < hitDist && Math.abs(orb.position.x - px) < hitDist) {
+      scene.remove(orb);
+      orbs3D.splice(i, 1);
+      sfxCollect();
+      score += 5;
+    }
+  }
+
+  // Chaser Hit
+  if(chaserMesh.position.z <= pz + 1.5) die();
+}
+
+// ─────────────────────────────────────────────
+//  GAME FLOW
+// ─────────────────────────────────────────────
+function startGame(){
+  sStart.classList.remove('on'); sOver.classList.remove('on');
+  csEl.classList.add('hidden');
+  hudEl.classList.add('on');
+
+  // Switch to 3D Canvas
+  canvas2d.style.display = 'none';
+  canvas3d.style.display = 'block';
+
+  state='playing'; score=0; spd=0.3; frame=0;
+  biome=0; bt=0; pl=1; plt=1;
+
+  // Reset meshes
+  playerMesh.position.x = LANE_X[pl];
+  chaserMesh.position.z = 12;
+  cz = 12;
+
+  obstacles3D.forEach(o => scene.remove(o)); obstacles3D = [];
+  orbs3D.forEach(o => scene.remove(o)); orbs3D = [];
+
+  trans=false; ta=0; td=1;
+  updateBiomeUI();
+
+  getAudio();
+  startAmbient();
+  startWarning();
+  sfxGameStart();
+}
+
+function die(){
+  if(state!=='playing') return;
+  state='dead'; if(score>hi) hi=score;
+  hudEl.classList.remove('on');
+  sOver.classList.add('on');
+  goScore.textContent=score; goBest.textContent=hi;
+  sfxDie();
+  stopAmbient();
+  stopWarning();
+
+  // Switch back to 2D for menu
+  canvas3d.style.display = 'none';
+  canvas2d.style.display = 'block';
+}
+
+// ─────────────────────────────────────────────
+//  UPDATE LOOP
+// ─────────────────────────────────────────────
+function update(){
+  if(state==='cutscene'){ updateCutscene(); SCENES[0].draw(csFrame); return; }
+
+  if(state==='menu'||state==='dead'){
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle = '#060c1a'; ctx.fillRect(0,0,W,H);
+    return;
+  }
+
+  if(state==='playing') {
+    frame++; score=Math.floor(frame/5); spd=0.3+frame*.0001;
+
+    // Lerp player X to target lane
+    playerMesh.position.x += (LANE_X[plt] - playerMesh.position.x) * 0.2;
+    // Add simple running bobbing effect
+    playerMesh.position.y = 0.75 + Math.sin(frame * 0.2) * 0.1;
+
+    // Biome Progression
+    if(!trans){bt++;if(bt>=BD){bt=0;trans=true;}}
+    if(trans) {
+       biome=(biome+1)%3;
+       updateBiomeUI(); updateAmbientBiome(); sfxBiomeTransition();
+       trans=false;
+    }
+
+    // Spawn Obstacles (far away in Z)
+    if(frame % Math.max(80-Math.floor(spd*40), 30) === 0) {
+      let lane = Math.floor(Math.random()*3);
+      let mesh = new THREE.Mesh(obsGeo, obsMat);
+      mesh.position.set(LANE_X[lane], 1, -80);
+      scene.add(mesh);
+      obstacles3D.push(mesh);
+    }
+
+    // Spawn Orbs
+    if(frame % 40 === 0) {
+      let lane = Math.floor(Math.random()*3);
+      let mesh = new THREE.Mesh(orbGeo, orbMat);
+      mesh.position.set(LANE_X[lane], 1, -80);
+      scene.add(mesh);
+      orbs3D.push(mesh);
+    }
+
+    // Move everything towards camera
+    obstacles3D.forEach(o => { o.position.z += spd; });
+    orbs3D.forEach(o => {
+      o.position.z += spd;
+      o.position.y = 1 + Math.sin(frame*0.1) * 0.2; // Hover effect
+    });
+
+    // Cleanup passed objects
+    obstacles3D = obstacles3D.filter(o => { if(o.position.z > 5) { scene.remove(o); return false; } return true; });
+    orbs3D = orbs3D.filter(o => { if(o.position.z > 5) { scene.remove(o); return false; } return true; });
+
+    // Chaser logic
+    cz += (-3 - cz) * 0.01; // Try to catch up
+    chaserMesh.position.z = cz;
+    chaserMesh.position.x = playerMesh.position.x * 0.8; // loosely follows player
+    chaserMesh.position.y = 3 + Math.sin(frame * 0.1) * 0.5;
+
+    checkHits();
+
+    // Sound Warning based on Chaser Z distance
+    const chaserDist = cz - playerMesh.position.z;
+    if(chaserDist < 6) {
+      setWarningIntensity(1 - (chaserDist / 6));
+    } else {
+      setWarningIntensity(0);
+    }
+
+    hudScore.textContent=score; hudBest.textContent=hi;
+    progFill.style.width=(bt/BD*100)+'%';
+
+    // Render 3D Scene
+    renderer.render(scene, camera);
+  }
+}
+
+// ─────────────────────────────────────────────
+//  BOOT
+// ─────────────────────────────────────────────
+buildCsDots();
+csEl.classList.remove('hidden');
+canvas2d.style.display = 'block';
+
+(function loop(){
+  update();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

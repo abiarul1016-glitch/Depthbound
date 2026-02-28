@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Abyssal Run</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+  }
+  #gameCanvas {
+    border: 2px solid #334;
+    image-rendering: pixelated;
+    cursor: none;
+  }
+  #ui {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #overlay {
+    background: rgba(5,5,15,0.92);
+    border: 2px solid #4af;
+    padding: 40px 60px;
+    text-align: center;
+    color: #cef;
+    max-width: 520px;
+    pointer-events: all;
+  }
+  #overlay h1 {
+    font-size: 2.2em;
+    letter-spacing: 4px;
+    color: #4af;
+    text-shadow: 0 0 20px #4af8;
+    margin-bottom: 8px;
+  }
+  #overlay .subtitle {
+    font-size: 0.85em;
+    color: #78a;
+    margin-bottom: 24px;
+    letter-spacing: 2px;
+  }
+  #overlay p {
+    font-size: 0.82em;
+    line-height: 1.7;
+    color: #abc;
+    margin-bottom: 20px;
+  }
+  #overlay .controls {
+    font-size: 0.78em;
+    color: #89b;
+    margin-bottom: 28px;
+    border: 1px solid #334;
+    padding: 12px;
+  }
+  #overlay .controls span { color: #4af; }
+  #startBtn {
+    background: transparent;
+    border: 2px solid #4af;
+    color: #4af;
+    font-family: 'Courier New', monospace;
+    font-size: 1em;
+    letter-spacing: 3px;
+    padding: 12px 36px;
+    cursor: pointer;
+    pointer-events: all;
+    transition: all 0.2s;
+  }
+  #startBtn:hover {
+    background: #4af2;
+    box-shadow: 0 0 20px #4af6;
+  }
+  #gameOver { display: none; }
+  #gameOver h2 { color: #f64; font-size: 1.8em; letter-spacing: 3px; margin-bottom: 12px; }
+  #finalScore { color: #4af; font-size: 1.1em; margin-bottom: 20px; }
+</style>
+</head>
+<body>
+<canvas id="gameCanvas"></canvas>
+<div id="ui">
+  <!-- Start Screen -->
+  <div id="overlay" id="startScreen">
+    <h1>ABYSSAL RUN</h1>
+    <div class="subtitle">∿ depth unlimited ∿</div>
+    <p>
+      Dr. Mara Solís — deep-sea researcher — fell from her dock into the abyss.<br>
+      An ancient ocean deity gifted her a pressure mask and hydro-jetpack.<br>
+      Now she must swim through the ocean floor, cross lava bridges at the Earth's core,<br>
+      and navigate frozen caverns — forever evading what lurks behind.
+    </p>
+    <div class="controls">
+      Move: <span>← → Arrow Keys</span> or <span>A / D</span> &nbsp;|&nbsp; Lanes: <span>Left / Center / Right</span>
+    </div>
+    <button id="startBtn" onclick="startGame()">[ DIVE IN ]</button>
+    <div id="gameOver">
+      <h2>CAUGHT.</h2>
+      <div id="finalScore"></div>
+      <button id="startBtn" onclick="startGame()" style="margin-top:0">[ TRY AGAIN ]</button>
+    </div>
+  </div>
+</div>
+<script>
+// ─────────────────────────────────────────────
+//  CANVAS SETUP
+// ─────────────────────────────────────────────
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const W = 480, H = 640;
+canvas.width = W; canvas.height = H;
+
+// ─────────────────────────────────────────────
+//  GAME STATE
+// ─────────────────────────────────────────────
+let state = 'menu'; // menu | playing | dead
+let score = 0;
+let hiScore = 0;
+let speed = 3;
+let frame = 0;
+let biome = 0; // 0=ocean, 1=lava, 2=ice
+let biomeTimer = 0;
+const BIOME_DURATION = 600; // frames per biome
+const BIOMES = ['OCEAN DEPTHS', 'LAVA CORE', 'ICE CAVERN'];
+
+// Lane system
+const LANE_X = [W/2 - 120, W/2, W/2 + 120];
+let playerLane = 1;
+let playerTargetLane = 1;
+let playerX = LANE_X[1];
+let playerY = H - 160;
+let playerAnim = 0; // swim bob
+
+// Lane switch
+let switchCooldown = 0;
+const SWITCH_SPEED = 16;
+
+// Obstacles & orbs
+let obstacles = [];
+let orbs = [];
+let bgParticles = [];
+let chaser = { x: -80, y: H - 160, frame: 0 };
+
+// Transition
+let transitioning = false;
+let transAlpha = 0;
+let transDir = 1;
+
+// Input
+const keys = {};
+document.addEventListener('keydown', e => {
+  if (keys[e.code]) return;
+  keys[e.code] = true;
+  if (state === 'playing') {
+    if ((e.code === 'ArrowLeft' || e.code === 'KeyA') && playerTargetLane > 0) {
+      playerTargetLane--;
+    }
+    if ((e.code === 'ArrowRight' || e.code === 'KeyD') && playerTargetLane < 2) {
+      playerTargetLane++;
+    }
+  }
+});
+document.addEventListener('keyup', e => keys[e.code] = false);
+
+// ─────────────────────────────────────────────
+//  PIXEL ART DRAWING HELPERS
+// ─────────────────────────────────────────────
+function pixelRect(x, y, w, h, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(Math.round(x - w/2), Math.round(y - h/2), w, h);
+}
+
+function drawPlayer(x, y, biome) {
+  const bob = Math.sin(playerAnim) * (biome === 0 ? 4 : 2);
+  y += bob;
+  const px = Math.round(x), py = Math.round(y);
+
+  // Body
+  const bodyColor = '#3af';
+  const suitColor = biome === 1 ? '#f83' : biome === 2 ? '#8cf' : '#28e';
+  const maskColor = '#aef';
+
+  // Jetpack (behind body)
+  if (biome === 0) {
+    ctx.fillStyle = '#f80';
+    ctx.fillRect(px - 14, py - 12, 8, 20); // tank
+    ctx.fillStyle = '#fa0';
+    ctx.fillRect(px - 12, py + 6, 4, 6);   // nozzle
+  }
+
+  // Legs
+  ctx.fillStyle = suitColor;
+  ctx.fillRect(px - 10, py + 12, 8, 12);
+  ctx.fillRect(px + 2, py + 12, 8, 12);
+
+  // Fins (ocean) / boots (lava) / ice boots
+  if (biome === 0) {
+    ctx.fillStyle = '#0cf';
+    ctx.fillRect(px - 14, py + 20, 12, 4);
+    ctx.fillRect(px - 2, py + 20, 12, 4);
+  } else {
+    ctx.fillStyle = biome === 1 ? '#840' : '#48f';
+    ctx.fillRect(px - 12, py + 22, 10, 4);
+    ctx.fillRect(px + 2, py + 22, 10, 4);
+  }
+
+  // Body
+  ctx.fillStyle = suitColor;
+  ctx.fillRect(px - 12, py - 10, 24, 22);
+
+  // Arms
+  ctx.fillStyle = suitColor;
+  ctx.fillRect(px - 20, py - 8, 10, 6);
+  ctx.fillRect(px + 10, py - 8, 10, 6);
+
+  // Head / Mask
+  ctx.fillStyle = '#e8c';
+  ctx.fillRect(px - 10, py - 26, 20, 18);
+
+  // Mask visor
+  if (biome === 0) {
+    ctx.fillStyle = maskColor;
+    ctx.fillRect(px - 12, py - 28, 24, 20);
+    ctx.fillStyle = '#0cf8';
+    ctx.fillRect(px - 10, py - 26, 20, 16);
+  }
+
+  // Eyes
+  ctx.fillStyle = '#000';
+  if (biome === 0) {
+    ctx.fillRect(px - 6, py - 22, 4, 4);
+    ctx.fillRect(px + 2, py - 22, 4, 4);
+  } else {
+    ctx.fillRect(px - 5, py - 22, 3, 3);
+    ctx.fillRect(px + 2, py - 22, 3, 3);
+  }
+
+  // Bubbles in ocean
+  if (biome === 0 && frame % 20 < 5) {
+    ctx.fillStyle = 'rgba(160,240,255,0.5)';
+    ctx.beginPath();
+    ctx.arc(px + 14, py - 20, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawChaser(x, y, biome, f) {
+  const px = Math.round(x), py = Math.round(y);
+  const bob = Math.sin(f * 0.15) * 5;
+
+  if (biome === 0) {
+    // Shark
+    const sc = '#48a';
+    const sw = Math.sin(f * 0.2) * 6;
+
+    // Tail wiggle
+    ctx.fillStyle = '#38a';
+    ctx.beginPath();
+    ctx.moveTo(px - 40, py + sw);
+    ctx.lineTo(px - 60, py - 15 + sw);
+    ctx.lineTo(px - 60, py + 15 + sw);
+    ctx.closePath();
+    ctx.fill();
+
+    // Body
+    ctx.fillStyle = sc;
+    ctx.beginPath();
+    ctx.ellipse(px, py, 40, 16, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Belly
+    ctx.fillStyle = '#adf';
+    ctx.beginPath();
+    ctx.ellipse(px + 5, py + 6, 26, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Fin
+    ctx.fillStyle = '#38a';
+    ctx.beginPath();
+    ctx.moveTo(px - 5, py - 16);
+    ctx.lineTo(px + 10, py - 32);
+    ctx.lineTo(px + 20, py - 16);
+    ctx.closePath();
+    ctx.fill();
+
+    // Eye
+    ctx.fillStyle = '#000';
+    ctx.fillRect(px + 20, py - 6, 5, 5);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(px + 21, py - 5, 2, 2);
+
+    // Teeth
+    ctx.fillStyle = '#fff';
+    for (let i = 0; i < 4; i++) {
+      ctx.fillRect(px + 20 + i * 5, py + 4, 3, 5);
+    }
+  } else if (biome === 1) {
+    // Lava Goliath
+    const lbob = bob;
+    ctx.fillStyle = '#300';
+    ctx.fillRect(px - 30, py - 50 + lbob, 60, 70);
+
+    // Lava cracks
+    ctx.fillStyle = '#f60';
+    ctx.fillRect(px - 20, py - 40 + lbob, 8, 20);
+    ctx.fillRect(px + 5, py - 35 + lbob, 6, 30);
+    ctx.fillRect(px - 10, py - 10 + lbob, 20, 6);
+
+    // Eyes
+    ctx.fillStyle = '#f00';
+    ctx.fillRect(px - 18, py - 36 + lbob, 10, 10);
+    ctx.fillRect(px + 8, py - 36 + lbob, 10, 10);
+    ctx.fillStyle = '#ff0';
+    ctx.fillRect(px - 15, py - 33 + lbob, 4, 4);
+    ctx.fillRect(px + 11, py - 33 + lbob, 4, 4);
+
+    // Arms
+    ctx.fillStyle = '#400';
+    ctx.fillRect(px - 50, py - 20 + lbob, 22, 14);
+    ctx.fillRect(px + 28, py - 20 + lbob, 22, 14);
+  } else {
+    // Ice Golem
+    const ib = bob;
+    ctx.fillStyle = '#89c';
+    ctx.fillRect(px - 28, py - 50 + ib, 56, 66);
+
+    // Ice shards
+    ctx.fillStyle = '#cef';
+    ctx.fillRect(px - 22, py - 60 + ib, 8, 14);
+    ctx.fillRect(px - 5, py - 64 + ib, 10, 18);
+    ctx.fillRect(px + 12, py - 58 + ib, 8, 12);
+
+    // Eyes
+    ctx.fillStyle = '#04f';
+    ctx.fillRect(px - 16, py - 36 + ib, 10, 10);
+    ctx.fillRect(px + 6, py - 36 + ib, 10, 10);
+    ctx.fillStyle = '#8ff';
+    ctx.fillRect(px - 13, py - 33 + ib, 4, 4);
+    ctx.fillRect(px + 9, py - 33 + ib, 4, 4);
+
+    ctx.fillStyle = '#9ad';
+    ctx.fillRect(px - 46, py - 22 + ib, 20, 12);
+    ctx.fillRect(px + 26, py - 22 + ib, 20, 12);
+  }
+}
+
+function drawObstacle(obs) {
+  const px = Math.round(obs.x), py = Math.round(obs.y);
+  if (biome === 0) {
+    // Coral / jellyfish
+    if (obs.type === 0) {
+      ctx.fillStyle = '#f48';
+      ctx.fillRect(px - 10, py - 30, 8, 30);
+      ctx.fillRect(px + 2, py - 40, 8, 40);
+      ctx.fillRect(px - 20, py - 20, 8, 20);
+      ctx.fillStyle = '#f6a';
+      ctx.fillRect(px - 12, py - 34, 4, 6);
+      ctx.fillRect(px, py - 44, 4, 6);
+    } else {
+      // Jellyfish
+      ctx.fillStyle = 'rgba(180,100,255,0.7)';
+      ctx.beginPath();
+      ctx.ellipse(px, py - 20, 20, 16, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(200,140,255,0.4)';
+      for (let i = -2; i <= 2; i++) {
+        ctx.fillRect(px + i * 7, py - 4, 3, 20 + Math.sin(frame * 0.1 + i) * 5);
+      }
+    }
+  } else if (biome === 1) {
+    // Lava pillars / fire
+    ctx.fillStyle = '#800';
+    ctx.fillRect(px - 12, py - 50, 24, 50);
+    ctx.fillStyle = '#f40';
+    ctx.fillRect(px - 10, py - 60, 20, 12);
+    ctx.fillStyle = '#ff0';
+    ctx.fillRect(px - 6, py - 66, 12, 8);
+    // Flicker
+    if (frame % 6 < 3) {
+      ctx.fillStyle = '#fa08';
+      ctx.fillRect(px - 4, py - 70, 8, 6);
+    }
+  } else {
+    // Ice stalactites
+    ctx.fillStyle = '#9cf';
+    ctx.beginPath();
+    ctx.moveTo(px - 14, py - 50);
+    ctx.lineTo(px + 14, py - 50);
+    ctx.lineTo(px, py);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#cef';
+    ctx.fillRect(px - 6, py - 50, 4, 20);
+  }
+}
+
+function drawOrb(orb) {
+  const px = Math.round(orb.x), py = Math.round(orb.y);
+  const pulse = Math.sin(frame * 0.15 + orb.offset) * 2;
+  let c;
+  if (biome === 0) c = ['#0ff', '#0cf', '#08f'];
+  else if (biome === 1) c = ['#ff0', '#f80', '#f40'];
+  else c = ['#8ff', '#acf', '#cef'];
+
+  ctx.fillStyle = c[0];
+  ctx.beginPath();
+  ctx.arc(px, py, 8 + pulse, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = c[1];
+  ctx.beginPath();
+  ctx.arc(px, py, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(px - 2, py - 2, 2, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// ─────────────────────────────────────────────
+//  BIOME BACKGROUND DRAWING
+// ─────────────────────────────────────────────
+function drawBackground() {
+  if (biome === 0) {
+    // Ocean
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#000818');
+    g.addColorStop(1, '#001428');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    // Caustics
+    ctx.fillStyle = 'rgba(0,180,255,0.04)';
+    for (let i = 0; i < 8; i++) {
+      const cx = (i * 73 + frame * 0.5) % W;
+      const cy = (i * 97 + frame * 0.3) % H;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, 30 + i * 10, 8, frame * 0.01 + i, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Floor
+    ctx.fillStyle = '#0a1a2a';
+    ctx.fillRect(0, H - 60, W, 60);
+    ctx.fillStyle = '#0d2235';
+    ctx.fillRect(0, H - 62, W, 4);
+
+    // Lane lines (subtle)
+    ctx.strokeStyle = 'rgba(0,150,255,0.15)';
+    ctx.setLineDash([10, 20]);
+    ctx.beginPath(); ctx.moveTo(W/2 - 60, 0); ctx.lineTo(W/2 - 60, H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W/2 + 60, 0); ctx.lineTo(W/2 + 60, H); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Bubbles (bg particles)
+    ctx.fillStyle = 'rgba(100,200,255,0.25)';
+    bgParticles.forEach(p => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+  } else if (biome === 1) {
+    // Lava core
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#150500');
+    g.addColorStop(1, '#2a0800');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    // Lava glow from below
+    const lg = ctx.createLinearGradient(0, H - 100, 0, H);
+    lg.addColorStop(0, 'rgba(255,80,0,0)');
+    lg.addColorStop(1, 'rgba(255,120,0,0.5)');
+    ctx.fillStyle = lg;
+    ctx.fillRect(0, H - 100, W, 100);
+
+    // Bridge
+    ctx.fillStyle = '#3a1a00';
+    ctx.fillRect(0, H - 60, W, 60);
+    ctx.fillStyle = '#4a2200';
+    ctx.fillRect(0, H - 62, W, 4);
+
+    // Bridge planks
+    ctx.fillStyle = '#2a1200';
+    for (let i = (frame * 3) % 40; i < W; i += 40) {
+      ctx.fillRect(i, H - 60, 30, 60);
+    }
+
+    // Lava below
+    ctx.fillStyle = '#f60';
+    ctx.fillRect(0, H - 20, W, 20);
+    if (frame % 8 < 4) {
+      ctx.fillStyle = '#ff0';
+      for (let i = 0; i < 5; i++) {
+        ctx.fillRect((i * 80 + frame * 2) % W, H - 22, 16, 4);
+      }
+    }
+
+    // Lane lines
+    ctx.strokeStyle = 'rgba(255,80,0,0.2)';
+    ctx.setLineDash([10, 20]);
+    ctx.beginPath(); ctx.moveTo(W/2 - 60, 0); ctx.lineTo(W/2 - 60, H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W/2 + 60, 0); ctx.lineTo(W/2 + 60, H); ctx.stroke();
+    ctx.setLineDash([]);
+
+  } else {
+    // Ice cavern
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#020810');
+    g.addColorStop(1, '#081828');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    // Ice ceiling stalactites (bg)
+    ctx.fillStyle = 'rgba(140,200,255,0.15)';
+    for (let i = 0; i < 6; i++) {
+      const ix = (i * 90 - (frame * 1.5) % W + W) % W;
+      ctx.beginPath();
+      ctx.moveTo(ix - 15, 0);
+      ctx.lineTo(ix + 15, 0);
+      ctx.lineTo(ix, 60 + i * 10);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Ice floor
+    ctx.fillStyle = '#1a2a4a';
+    ctx.fillRect(0, H - 60, W, 60);
+    ctx.fillStyle = '#8cf';
+    ctx.fillRect(0, H - 62, W, 3);
+
+    // Ice sheen
+    ctx.fillStyle = 'rgba(140,220,255,0.06)';
+    for (let i = 0; i < 4; i++) {
+      ctx.fillRect((i * 130 + frame * 0.8) % W, H - 60, 80, 60);
+    }
+
+    // Snowflakes
+    ctx.fillStyle = 'rgba(200,230,255,0.4)';
+    bgParticles.forEach(p => {
+      ctx.fillRect(p.x, p.y, 2, 2);
+    });
+
+    // Lane lines
+    ctx.strokeStyle = 'rgba(100,180,255,0.2)';
+    ctx.setLineDash([10, 20]);
+    ctx.beginPath(); ctx.moveTo(W/2 - 60, 0); ctx.lineTo(W/2 - 60, H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(W/2 + 60, 0); ctx.lineTo(W/2 + 60, H); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+// ─────────────────────────────────────────────
+//  BIOME TRANSITION
+// ─────────────────────────────────────────────
+function drawTransition() {
+  if (!transitioning) return;
+  ctx.fillStyle = `rgba(10,5,0,${transAlpha})`;
+  ctx.fillRect(0, 0, W, H);
+
+  if (transAlpha >= 0.95 && transDir === 1) {
+    biome = (biome + 1) % 3;
+    spawnBgParticles();
+    transDir = -1;
+  }
+  transAlpha += transDir * 0.04;
+  if (transAlpha <= 0) {
+    transAlpha = 0;
+    transitioning = false;
+    transDir = 1;
+  }
+}
+
+// ─────────────────────────────────────────────
+//  HUD
+// ─────────────────────────────────────────────
+function drawHUD() {
+  // Score
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(8, 8, 180, 36);
+  ctx.fillStyle = '#4af';
+  ctx.font = '10px Courier New';
+  ctx.fillText('SCORE', 16, 22);
+  ctx.font = 'bold 16px Courier New';
+  ctx.fillText(score, 16, 38);
+
+  // Hi score
+  ctx.fillStyle = '#678';
+  ctx.font = '10px Courier New';
+  ctx.fillText('BEST: ' + hiScore, 80, 22);
+
+  // Biome indicator
+  const biomeColors = ['#0cf', '#f60', '#8cf'];
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(W - 168, 8, 160, 36);
+  ctx.fillStyle = biomeColors[biome];
+  ctx.font = '10px Courier New';
+  ctx.fillText('BIOME', W - 158, 22);
+  ctx.font = 'bold 11px Courier New';
+  ctx.fillText(BIOMES[biome], W - 158, 38);
+
+  // Biome progress bar
+  const pct = biomeTimer / BIOME_DURATION;
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.fillRect(8, H - 20, W - 16, 10);
+  ctx.fillStyle = biomeColors[biome];
+  ctx.fillRect(8, H - 20, (W - 16) * pct, 10);
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  ctx.font = '8px Courier New';
+  ctx.fillText('NEXT BIOME', W/2 - 30, H - 12);
+}
+
+// ─────────────────────────────────────────────
+//  SPAWN HELPERS
+// ─────────────────────────────────────────────
+function spawnObstacle() {
+  const lane = Math.floor(Math.random() * 3);
+  obstacles.push({
+    x: LANE_X[lane],
+    y: -50,
+    lane,
+    type: Math.floor(Math.random() * 2)
+  });
+}
+
+function spawnOrb() {
+  const lane = Math.floor(Math.random() * 3);
+  orbs.push({
+    x: LANE_X[lane],
+    y: -30,
+    lane,
+    offset: Math.random() * Math.PI * 2
+  });
+}
+
+function spawnBgParticles() {
+  bgParticles = [];
+  for (let i = 0; i < 25; i++) {
+    bgParticles.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      r: Math.random() * 3 + 1,
+      vy: biome === 2 ? Math.random() * 0.5 + 0.2 : -(Math.random() * 0.8 + 0.2)
+    });
+  }
+}
+
+// ─────────────────────────────────────────────
+//  COLLISION
+// ─────────────────────────────────────────────
+function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh) {
+  return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+}
+
+function checkCollisions() {
+  const px = playerX - 12, py = playerY - 26, pw = 24, ph = 52;
+
+  for (let obs of obstacles) {
+    if (rectsOverlap(px, py, pw, ph, obs.x - 15, obs.y - 50, 30, 50)) {
+      die();
+      return;
+    }
+  }
+
+  // Chaser collision
+  if (chaser.x > playerX - 60) {
+    die();
+  }
+}
+
+// ─────────────────────────────────────────────
+//  GAME FLOW
+// ─────────────────────────────────────────────
+function startGame() {
+  document.getElementById('overlay').style.display = 'none';
+  state = 'playing';
+  score = 0;
+  speed = 3;
+  frame = 0;
+  biome = 0;
+  biomeTimer = 0;
+  playerLane = 1;
+  playerTargetLane = 1;
+  playerX = LANE_X[1];
+  playerY = H - 130;
+  obstacles = [];
+  orbs = [];
+  chaser = { x: -120, y: H - 130 };
+  transitioning = false;
+  transAlpha = 0;
+  transDir = 1;
+  spawnBgParticles();
+}
+
+function die() {
+  if (state !== 'playing') return;
+  state = 'dead';
+  if (score > hiScore) hiScore = score;
+
+  const overlay = document.getElementById('overlay');
+  const gameOver = document.getElementById('gameOver');
+  document.getElementById('finalScore').textContent = `SCORE: ${score}  |  BEST: ${hiScore}`;
+  gameOver.style.display = 'block';
+  overlay.style.display = 'flex';
+  overlay.style.flexDirection = 'column';
+
+  // Hide story elements, show game over
+  const children = overlay.children;
+  children[0].style.display = 'none'; // h1
+  children[1].style.display = 'none'; // subtitle
+  children[2].style.display = 'none'; // p
+  children[3].style.display = 'none'; // controls
+  children[4].style.display = 'none'; // start btn
+}
+
+// ─────────────────────────────────────────────
+//  MAIN LOOP
+// ─────────────────────────────────────────────
+function update() {
+  if (state !== 'playing') return;
+
+  frame++;
+  score = Math.floor(frame / 6);
+  speed = 3 + frame * 0.002;
+  playerAnim += 0.1;
+
+  // Lane movement
+  const targetX = LANE_X[playerTargetLane];
+  if (Math.abs(playerX - targetX) > 2) {
+    playerX += (targetX - playerX) * 0.18;
+  } else {
+    playerX = targetX;
+    playerLane = playerTargetLane;
+  }
+
+  // Biome timer
+  if (!transitioning) {
+    biomeTimer++;
+    if (biomeTimer >= BIOME_DURATION) {
+      biomeTimer = 0;
+      transitioning = true;
+    }
+  }
+
+  // Spawn obstacles
+  if (frame % Math.max(60 - Math.floor(speed * 5), 25) === 0) {
+    spawnObstacle();
+  }
+  // Spawn orbs
+  if (frame % 40 === 0) spawnOrb();
+
+  // Move obstacles & orbs
+  obstacles.forEach(o => o.y += speed);
+  orbs.forEach(o => o.y += speed);
+  obstacles = obstacles.filter(o => o.y < H + 80);
+  orbs = orbs.filter(o => o.y < H + 80);
+
+  // Collect orbs
+  orbs = orbs.filter(o => {
+    const collected = rectsOverlap(playerX - 16, playerY - 16, 32, 32, o.x - 8, o.y - 8, 16, 16);
+    if (collected) score += 5;
+    return !collected;
+  });
+
+  // Chaser
+  const targetChaserX = playerX - 160;
+  chaser.x += (targetChaserX - chaser.x) * 0.025;
+  chaser.y = playerY;
+
+  // Bg particles
+  bgParticles.forEach(p => {
+    p.y += p.vy;
+    if (biome === 2 && p.y > H) p.y = 0;
+    else if (biome !== 2 && p.y < 0) p.y = H;
+  });
+
+  checkCollisions();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  if (state === 'menu') {
+    // Draw animated menu background
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#000818');
+    g.addColorStop(1, '#001428');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    // Animated caustics
+    ctx.fillStyle = 'rgba(0,160,255,0.04)';
+    for (let i = 0; i < 6; i++) {
+      const mx = (i * 83 + frame * 0.3) % W;
+      const my = (i * 107 + frame * 0.2) % H;
+      ctx.beginPath();
+      ctx.ellipse(mx, my, 40, 10, frame * 0.005 + i, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    frame++;
+    return;
+  }
+
+  drawBackground();
+
+  // Draw orbs
+  orbs.forEach(drawOrb);
+
+  // Draw obstacles
+  obstacles.forEach(drawObstacle);
+
+  // Draw chaser
+  drawChaser(chaser.x, chaser.y, biome, frame);
+
+  // Draw player
+  drawPlayer(playerX, playerY, biome);
+
+  // Transition overlay
+  drawTransition();
+
+  // HUD
+  drawHUD();
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// Start the loop immediately (for menu animation)
+loop();
+</script>
+</body>
+</html>

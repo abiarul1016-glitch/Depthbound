@@ -1,0 +1,1216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Abyssal Run</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,300&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --accent-ocean: #3b9eff;
+    --accent-lava:  #ff6a20;
+    --accent-ice:   #7ecfff;
+    --glass: rgba(255,255,255,0.07);
+    --glass-border: rgba(255,255,255,0.11);
+    --text: rgba(255,255,255,0.95);
+    --text-dim: rgba(255,255,255,0.42);
+    --r: 18px; --r-sm: 10px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: #06090f;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; font-family: 'DM Sans', sans-serif; overflow: hidden;
+  }
+  .wrap {
+    position: relative; width: 480px; height: 640px;
+    border-radius: 28px; overflow: hidden;
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.07),
+      0 40px 100px rgba(0,0,0,0.75),
+      0 0 80px rgba(59,158,255,0.06);
+  }
+  #c { display:block; width:480px; height:640px; }
+
+  /* ── CUTSCENE OVERLAY ── */
+  #cutscene {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-end;
+    padding: 0 0 48px;
+    pointer-events: all;
+    background: transparent;
+  }
+  #cutscene.hidden { display: none; }
+
+  .cs-text-box {
+    width: calc(100% - 56px);
+    background: rgba(6,9,15,0.72);
+    backdrop-filter: blur(18px) saturate(1.5);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px;
+    padding: 18px 22px 16px;
+    margin-bottom: 16px;
+    transition: opacity 0.4s;
+  }
+  .cs-speaker {
+    font-size: 0.6em; font-weight: 600; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--accent-ocean);
+    margin-bottom: 6px; display: block;
+  }
+  .cs-speaker.deity { color: #c8a0ff; }
+  .cs-line {
+    font-size: 0.84em; font-weight: 300; line-height: 1.65;
+    color: rgba(255,255,255,0.88); font-style: italic;
+    min-height: 2.5em;
+  }
+  .cs-nav {
+    display: flex; align-items: center; justify-content: space-between;
+    width: calc(100% - 56px);
+  }
+  .cs-dots { display: flex; gap: 6px; }
+  .cs-dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: rgba(255,255,255,0.2); transition: background 0.3s;
+  }
+  .cs-dot.active { background: var(--accent-ocean); }
+  .cs-btn {
+    background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 100px; color: rgba(255,255,255,0.7);
+    font-family: 'DM Sans', sans-serif; font-size: 0.75em; font-weight: 500;
+    padding: 8px 20px; cursor: pointer; transition: all 0.15s; letter-spacing: 0.3px;
+  }
+  .cs-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+  .cs-skip {
+    background: transparent; border: none;
+    color: rgba(255,255,255,0.28); font-family: 'DM Sans', sans-serif;
+    font-size: 0.68em; cursor: pointer; padding: 4px 8px;
+    transition: color 0.15s; letter-spacing: 0.3px;
+  }
+  .cs-skip:hover { color: rgba(255,255,255,0.55); }
+
+  /* ── HUD ── */
+  #hud { display:none; position:absolute; inset:0; pointer-events:none; }
+  #hud.on { display:block; }
+  .pill {
+    position:absolute; display:flex; align-items:center; gap:8px;
+    background:rgba(8,12,22,0.55); backdrop-filter:blur(16px) saturate(1.4);
+    border:1px solid rgba(255,255,255,0.09); border-radius:100px; padding:8px 18px;
+  }
+  #pill-score { top:20px; left:20px; }
+  #pill-best  { top:20px; right:20px; }
+  .pill .lbl { font-size:0.62em; color:var(--text-dim); letter-spacing:0.8px; text-transform:uppercase; }
+  .pill .val { font-family:'DM Mono',monospace; font-size:0.9em; font-weight:500; color:var(--text); }
+  .dot { width:6px; height:6px; border-radius:50%; background:var(--accent-ocean); transition:background .5s; }
+  #prog-wrap { position:absolute; bottom:20px; left:20px; right:20px; }
+  #prog-labels { display:flex; justify-content:space-between; margin-bottom:5px; }
+  #prog-labels span { font-size:0.6em; color:var(--text-dim); letter-spacing:0.4px; }
+  #prog-labels #bname { font-weight:500; color:var(--accent-ocean); transition:color .5s; }
+  #prog-track { height:2px; background:rgba(255,255,255,0.07); border-radius:100px; overflow:hidden; }
+  #prog-fill { height:100%; width:0%; border-radius:100px; background:var(--accent-ocean); transition:background .5s; }
+
+  /* ── SCREENS ── */
+  .screen {
+    display:none; position:absolute; inset:0;
+    flex-direction:column; align-items:center; justify-content:center;
+    padding:36px 40px; pointer-events:none;
+  }
+  .screen.on { display:flex; pointer-events:all; }
+  #s-start { background:linear-gradient(160deg,rgba(8,14,28,.97),rgba(5,8,14,.98)); }
+  #s-over  { background:linear-gradient(160deg,rgba(10,5,3,.97),rgba(5,8,14,.98)); }
+  .logo {
+    width:60px; height:60px; border-radius:16px;
+    background:linear-gradient(135deg,#1a5fff,#00aaff);
+    display:flex; align-items:center; justify-content:center;
+    font-size:26px; margin-bottom:22px; box-shadow:0 8px 30px rgba(59,158,255,.32);
+  }
+  .screen h1 { font-size:1.9em; font-weight:600; letter-spacing:-0.4px; color:var(--text); margin-bottom:5px; }
+  .tag { font-size:0.78em; color:var(--text-dim); margin-bottom:28px; }
+  .card { width:100%; background:var(--glass); border:1px solid var(--glass-border); border-radius:var(--r); padding:18px 22px; margin-bottom:20px; }
+  .card p { font-size:0.78em; line-height:1.75; color:rgba(255,255,255,.55); font-weight:300; }
+  .chips { display:flex; gap:10px; width:100%; margin-bottom:28px; }
+  .chip { flex:1; background:var(--glass); border:1px solid var(--glass-border); border-radius:var(--r-sm); padding:10px 12px; text-align:center; }
+  .chip .k { font-family:'DM Mono',monospace; font-size:0.75em; color:var(--accent-ocean); font-weight:500; display:block; margin-bottom:3px; }
+  .chip .d { font-size:0.65em; color:var(--text-dim); }
+  .btn {
+    width:100%; padding:15px; border-radius:var(--r-sm); border:none;
+    background:linear-gradient(135deg,#1a5fff,#009eff);
+    color:#fff; font-family:'DM Sans',sans-serif; font-size:0.92em;
+    font-weight:600; letter-spacing:0.2px; cursor:pointer;
+    box-shadow:0 4px 20px rgba(59,158,255,.38); transition:opacity .15s, transform .12s;
+  }
+  .btn:hover { opacity:.9; transform:scale(1.01); }
+  .btn:active { transform:scale(.99); }
+  .btn-row { display:flex; gap:12px; width:100%; }
+  .btn-sec {
+    flex:1; padding:15px; border-radius:var(--r-sm); border:1px solid rgba(255,255,255,.12);
+    background:rgba(255,255,255,.06); color:rgba(255,255,255,.7);
+    font-family:'DM Sans',sans-serif; font-size:0.88em; font-weight:500;
+    cursor:pointer; transition:all .15s;
+  }
+  .btn-sec:hover { background:rgba(255,255,255,.1); color:#fff; }
+  .icon { font-size:44px; margin-bottom:14px; }
+  #s-over h2 { font-size:1.6em; font-weight:600; color:var(--text); letter-spacing:-0.3px; margin-bottom:4px; }
+  #s-over .sub { font-size:0.76em; color:var(--text-dim); margin-bottom:28px; }
+  .sgrid { display:grid; grid-template-columns:1fr 1fr; gap:12px; width:100%; margin-bottom:24px; }
+  .scell { background:var(--glass); border:1px solid var(--glass-border); border-radius:var(--r-sm); padding:16px; text-align:center; }
+  .scell .v { font-family:'DM Mono',monospace; font-size:1.45em; font-weight:500; color:var(--text); display:block; }
+  .scell .l { font-size:0.62em; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px; margin-top:4px; display:block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <canvas id="c" width="480" height="640"></canvas>
+
+  <!-- CUTSCENE UI -->
+  <div id="cutscene">
+    <div class="cs-text-box" id="cs-box">
+      <span class="cs-speaker" id="cs-speaker">NARRATOR</span>
+      <div class="cs-line" id="cs-line"></div>
+    </div>
+    <div class="cs-nav">
+      <button class="cs-skip" onclick="skipCutscene()">Skip intro</button>
+      <div class="cs-dots" id="cs-dots"></div>
+      <button class="cs-btn" id="cs-next-btn" onclick="csNext()">Continue →</button>
+    </div>
+  </div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div class="pill" id="pill-score">
+      <div class="dot" id="bdot"></div>
+      <span class="lbl">Score</span><span class="val" id="hscore">0</span>
+    </div>
+    <div class="pill" id="pill-best">
+      <span class="lbl">Best</span><span class="val" id="hbest">0</span>
+    </div>
+    <div id="prog-wrap">
+      <div id="prog-labels">
+        <span id="bname">OCEAN DEPTHS</span><span>next biome</span>
+      </div>
+      <div id="prog-track"><div id="prog-fill"></div></div>
+    </div>
+  </div>
+
+  <!-- Start Screen -->
+  <div class="screen" id="s-start">
+    <div class="logo">🌊</div>
+    <h1>Abyssal Run</h1>
+    <p class="tag">Swim. Run. Survive.</p>
+    <div class="card">
+      <p>Dr. Mara Solís — deep-sea researcher — was gifted a pressure mask and hydro-jetpack by an ancient ocean deity. Now she must outrun what hunts below, across lava bridges at the Earth's core and through frozen caverns beyond.</p>
+    </div>
+    <div class="chips">
+      <div class="chip"><span class="k">← / A</span><span class="d">Move Left</span></div>
+      <div class="chip"><span class="k">→ / D</span><span class="d">Move Right</span></div>
+      <div class="chip"><span class="k">3 Lanes</span><span class="d">Dodge &amp; Collect</span></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn-sec" onclick="playCutscene()">Watch Intro</button>
+      <button class="btn" style="flex:2" onclick="startGame()">Begin Descent</button>
+    </div>
+  </div>
+
+  <!-- Game Over -->
+  <div class="screen" id="s-over">
+    <div class="icon">💀</div>
+    <h2>Caught.</h2>
+    <p class="sub">The abyss claims another.</p>
+    <div class="sgrid">
+      <div class="scell"><span class="v" id="go-score">0</span><span class="l">Score</span></div>
+      <div class="scell"><span class="v" id="go-best">0</span><span class="l">Best</span></div>
+    </div>
+    <button class="btn" onclick="startGame()">Try Again</button>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+//  CANVAS & CONSTANTS
+// ─────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = 480, H = 640;
+const LX = [W/2-120, W/2, W/2+120];
+const BD = 620;
+const BNAMES = ['OCEAN DEPTHS','LAVA CORE','ICE CAVERN'];
+
+const PALETTES = [
+  { bg0:'#07101e', bg1:'#0b1c35', fl:'#091624', fle:'#173450', ld:'rgba(59,158,255,.1)', acc:'#3b9eff', glow:'rgba(59,158,255,.18)' },
+  { bg0:'#110400', bg1:'#1e0900', fl:'#260e00', fle:'#3a1500', ld:'rgba(255,106,32,.12)', acc:'#ff6a20', glow:'rgba(255,106,32,.18)' },
+  { bg0:'#03080f', bg1:'#060e1c', fl:'#0b1828', fle:'#182e48', ld:'rgba(126,207,255,.1)', acc:'#7ecfff', glow:'rgba(126,207,255,.15)' },
+];
+
+// DOM
+const hudEl     = document.getElementById('hud');
+const hudScore  = document.getElementById('hscore');
+const hudBest   = document.getElementById('hbest');
+const bdot      = document.getElementById('bdot');
+const bname     = document.getElementById('bname');
+const progFill  = document.getElementById('prog-fill');
+const sStart    = document.getElementById('s-start');
+const sOver     = document.getElementById('s-over');
+const goScore   = document.getElementById('go-score');
+const goBest    = document.getElementById('go-best');
+const csEl      = document.getElementById('cutscene');
+const csLine    = document.getElementById('cs-line');
+const csSpeaker = document.getElementById('cs-speaker');
+const csNextBtn = document.getElementById('cs-next-btn');
+const csDotsEl  = document.getElementById('cs-dots');
+
+// ─────────────────────────────────────────────
+//  GAME STATE
+// ─────────────────────────────────────────────
+let state = 'cutscene'; // cutscene | menu | playing | dead
+let score=0, hi=0, spd=2, frame=0;
+let biome=0, bt=0;
+let pl=1, plt=1, px=LX[1], py=H-130, panim=0;
+let obs=[], orbs=[], parts=[];
+let cx=-140, cy=H-130;
+let trans=false, ta=0, td=1;
+const keys={};
+
+document.addEventListener('keydown', e=>{
+  if(keys[e.code]) return; keys[e.code]=true;
+  if(state!=='playing') return;
+  if((e.code==='ArrowLeft'||e.code==='KeyA') && plt>0) plt--;
+  if((e.code==='ArrowRight'||e.code==='KeyD') && plt<2) plt++;
+});
+document.addEventListener('keyup', e=>keys[e.code]=false);
+
+// ─────────────────────────────────────────────
+//  CUTSCENE ENGINE
+// ─────────────────────────────────────────────
+// Each scene: { draw(f), speaker, line, nextLabel, duration (auto-advance ms, 0=manual) }
+const SCENES = [
+  {
+    speaker: 'NARRATOR',
+    line: 'It was past midnight on Pier 7. Dr. Mara Solís had been at the edge of her research dock for three hours — chasing a signal no one else believed in.',
+    draw: drawScene_Dock,
+    nextLabel: 'Continue →'
+  },
+  {
+    speaker: 'NARRATOR',
+    line: 'Her supervisor had followed her out. Words were exchanged. Then — a shove. She felt the cold rail at her back, and then nothing beneath her feet.',
+    draw: drawScene_Argument,
+    nextLabel: 'Continue →'
+  },
+  {
+    speaker: 'NARRATOR',
+    line: 'She sank fast. The lights of the surface faded. Down here, the pressure should have killed her. But something in the dark had other plans.',
+    draw: drawScene_Sinking,
+    nextLabel: 'Continue →'
+  },
+  {
+    speaker: 'THE DEEP',
+    speakerClass: 'deity',
+    line: '"You sought what lives below the known world. So shall you run through it. Take these gifts — and do not stop."',
+    draw: drawScene_Deity,
+    nextLabel: 'Continue →'
+  },
+  {
+    speaker: 'NARRATOR',
+    line: 'The mask sealed itself to her face. The jetpack hummed to life. Somewhere behind her, something ancient began to chase.',
+    draw: drawScene_Gift,
+    nextLabel: 'Begin Descent →'
+  },
+];
+
+let csScene = 0;
+let csFrame = 0;
+let csAlpha = 0; // fade in/out
+let csFading = false;
+let csTextAlpha = 0;
+let csTyped = '';
+let csTyping = false;
+let csTypeIndex = 0;
+let csTypeTimer = 0;
+
+function buildCsDots() {
+  csDotsEl.innerHTML = '';
+  SCENES.forEach((_, i) => {
+    const d = document.createElement('div');
+    d.className = 'cs-dot' + (i === csScene ? ' active' : '');
+    csDotsEl.appendChild(d);
+  });
+}
+
+function playCutscene() {
+  sStart.classList.remove('on');
+  csEl.classList.remove('hidden');
+  csScene = 0; csFrame = 0; csAlpha = 0; csTextAlpha = 0;
+  state = 'cutscene';
+  loadCsScene();
+}
+
+function loadCsScene() {
+  const s = SCENES[csScene];
+  csSpeaker.textContent = s.speaker;
+  csSpeaker.className = 'cs-speaker' + (s.speakerClass ? ' '+s.speakerClass : '');
+  csNextBtn.textContent = s.nextLabel || 'Continue →';
+  // type-on effect
+  csTyped = '';
+  csTypeIndex = 0;
+  csTyping = true;
+  csLine.textContent = '';
+  buildCsDots();
+  csFrame = 0;
+}
+
+function csNext() {
+  // If still typing, complete it instantly
+  if (csTyping) {
+    csTyping = false;
+    csTyped = SCENES[csScene].line;
+    csLine.textContent = csTyped;
+    return;
+  }
+  csScene++;
+  if (csScene >= SCENES.length) {
+    endCutscene();
+  } else {
+    loadCsScene();
+  }
+}
+
+function skipCutscene() {
+  endCutscene();
+}
+
+function endCutscene() {
+  csEl.classList.add('hidden');
+  sStart.classList.add('on');
+  state = 'menu';
+}
+
+function updateCutscene() {
+  csFrame++;
+  // Typewriter
+  if (csTyping) {
+    csTypeTimer++;
+    if (csTypeTimer % 2 === 0) {
+      const full = SCENES[csScene].line;
+      if (csTypeIndex < full.length) {
+        csTyped += full[csTypeIndex];
+        csTypeIndex++;
+        csLine.textContent = csTyped;
+      } else {
+        csTyping = false;
+      }
+    }
+  }
+}
+
+// ─────────────────────────────────────────────
+//  CUTSCENE SCENE DRAWINGS
+// ─────────────────────────────────────────────
+
+// Helper: draw stars
+function drawStars(seed, alpha=1) {
+  ctx.fillStyle = `rgba(255,255,255,${alpha * 0.7})`;
+  for (let i = 0; i < 60; i++) {
+    const sx = ((seed*17+i*137)%480);
+    const sy = ((seed*7+i*83)%300);
+    const ss = (i%3===0)?1.5:1;
+    ctx.fillRect(sx, sy, ss, ss);
+  }
+}
+
+// Helper: draw moon
+function drawMoon(x, y, r, alpha=1) {
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#e8e0c8';
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#c4b88a';
+  ctx.fillRect(x-r+2, y-4, 4, 3);
+  ctx.fillRect(x+4, y+3, 5, 4);
+  ctx.globalAlpha = 1;
+}
+
+// Helper: draw water surface
+function drawWaterSurface(yOff, alpha=1) {
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#0a2040';
+  ctx.fillRect(0, yOff, W, H - yOff);
+  // shimmer
+  ctx.fillStyle = 'rgba(59,158,255,0.08)';
+  for (let i = 0; i < 6; i++) {
+    const wx = (i*80 + csFrame*0.8) % (W+60) - 30;
+    ctx.beginPath();
+    ctx.ellipse(wx, yOff+6, 30, 5, 0, 0, Math.PI*2);
+    ctx.fill();
+  }
+  // top edge
+  ctx.fillStyle = 'rgba(100,180,255,0.25)';
+  ctx.fillRect(0, yOff, W, 3);
+  ctx.globalAlpha = 1;
+}
+
+// Helper: draw Mara (simple pixel figure)
+function drawMara(x, y, pose='stand', alpha=1) {
+  ctx.globalAlpha = alpha;
+  // pose: stand, fall, swim
+  const coat = '#2a5fa8', dark = '#1a3d70', skin = '#e8c4a0', hair = '#2a1808';
+
+  if (pose === 'fall' || pose === 'swim') {
+    // rotated body
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(pose === 'fall' ? 0.4 : -0.3);
+    ctx.fillStyle = dark; ctx.fillRect(-6, 2, 12, 16);
+    ctx.fillStyle = coat; ctx.fillRect(-8, -6, 16, 12);
+    ctx.fillStyle = coat; ctx.fillRect(-16, -5, 10, 6); ctx.fillRect(6, -5, 10, 6);
+    ctx.fillStyle = skin; ctx.fillRect(-8, -20, 16, 16);
+    ctx.fillStyle = hair; ctx.fillRect(-8, -22, 16, 6);
+    ctx.fillStyle = '#1a1a28'; ctx.fillRect(-4, -16, 3, 3); ctx.fillRect(1, -16, 3, 3);
+    ctx.restore();
+  } else {
+    // standing
+    ctx.fillStyle = dark; ctx.fillRect(x-6, y, 12, 18);
+    ctx.fillStyle = coat; ctx.fillRect(x-8, y-12, 16, 14);
+    ctx.fillStyle = coat; ctx.fillRect(x-18, y-10, 12, 6); ctx.fillRect(x+6, y-10, 12, 6);
+    // lab coat detail
+    ctx.fillStyle = '#3a70c8'; ctx.fillRect(x-2, y-12, 4, 12);
+    ctx.fillStyle = skin; ctx.fillRect(x-8, y-26, 16, 16);
+    ctx.fillStyle = hair; ctx.fillRect(x-8, y-28, 16, 6);
+    ctx.fillStyle = hair; ctx.fillRect(x+6, y-26, 3, 10); // ponytail
+    ctx.fillStyle = '#1a1a28'; ctx.fillRect(x-4, y-22, 3, 3); ctx.fillRect(x+1, y-22, 3, 3);
+    ctx.fillStyle = '#c05030'; ctx.fillRect(x-3, y-16, 6, 2); // subtle mouth
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Helper: draw antagonist (supervisor — blocky, aggressive)
+function drawAntag(x, y, alpha=1) {
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#444'; ctx.fillRect(x-7, y, 14, 18);
+  ctx.fillStyle = '#333'; ctx.fillRect(x-9, y-12, 18, 14);
+  ctx.fillStyle = '#555'; ctx.fillRect(x-18, y-10, 11, 6); ctx.fillRect(x+7, y-10, 11, 6);
+  ctx.fillStyle = '#d4a888'; ctx.fillRect(x-8, y-26, 16, 16);
+  ctx.fillStyle = '#555'; ctx.fillRect(x-8, y-28, 16, 7);
+  ctx.fillStyle = '#1a1a28'; ctx.fillRect(x-4, y-22, 3, 3); ctx.fillRect(x+1, y-22, 3, 3);
+  // Angry brows
+  ctx.fillStyle = '#333';
+  ctx.beginPath(); ctx.moveTo(x-6,y-25); ctx.lineTo(x-1,y-23); ctx.lineTo(x-6,y-23); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x+6,y-25); ctx.lineTo(x+1,y-23); ctx.lineTo(x+6,y-23); ctx.fill();
+  ctx.globalAlpha = 1;
+}
+
+// Helper: draw dock
+function drawDock(alpha=1) {
+  ctx.globalAlpha = alpha;
+  // planks
+  ctx.fillStyle = '#3a2810';
+  ctx.fillRect(60, H-180, 360, 60);
+  for (let i = 0; i < 9; i++) {
+    ctx.fillStyle = i%2===0 ? '#2e2008' : '#3a2810';
+    ctx.fillRect(60+i*40, H-180, 40, 60);
+  }
+  // edge highlight
+  ctx.fillStyle = '#5a3a18';
+  ctx.fillRect(60, H-182, 360, 3);
+  // pillars
+  [120, 240, 360].forEach(px2 => {
+    ctx.fillStyle = '#2a1c08';
+    ctx.fillRect(px2-6, H-180, 12, 80);
+  });
+  // railing
+  ctx.fillStyle = '#4a3010';
+  ctx.fillRect(60, H-190, 360, 8);
+  [80,120,160,200,240,280,320,360,400].forEach(rx => {
+    ctx.fillRect(rx-2, H-240, 4, 52);
+  });
+  ctx.fillRect(60, H-240, 360, 8);
+  ctx.globalAlpha = 1;
+}
+
+// Scene 1: Night dock, Mara working alone
+function drawScene_Dock(f) {
+  // Night sky
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#020508'); g.addColorStop(0.5,'#050d18'); g.addColorStop(1,'#0a1828');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  drawStars(42);
+  drawMoon(360, 70, 22);
+
+  // City lights on horizon (distant)
+  ctx.fillStyle='rgba(255,200,80,0.06)';
+  ctx.fillRect(0, H-340, W, 60);
+
+  // Ocean
+  drawWaterSurface(H-180);
+
+  // Dock
+  drawDock();
+
+  // Research equipment: laptop + light
+  const lampGlow = ctx.createRadialGradient(200, H-220, 0, 200, H-220, 80);
+  lampGlow.addColorStop(0,'rgba(255,240,180,0.18)');
+  lampGlow.addColorStop(1,'transparent');
+  ctx.fillStyle=lampGlow; ctx.fillRect(120,H-300,160,120);
+
+  // Laptop
+  ctx.fillStyle='#222'; ctx.fillRect(168, H-195, 50, 32);
+  ctx.fillStyle='#1a4060'; ctx.fillRect(170, H-193, 46, 26);
+  // screen glow
+  ctx.fillStyle='rgba(80,160,255,0.22)'; ctx.fillRect(170,H-193,46,26);
+  ctx.fillStyle='#2a2a2a'; ctx.fillRect(160,H-164,66,4);
+
+  // Clipboard / notes
+  ctx.fillStyle='#e8e0cc'; ctx.fillRect(228,H-195,28,36);
+  ctx.fillStyle='rgba(0,0,0,0.3)';
+  for(let ln=0;ln<4;ln++) ctx.fillRect(232,H-190+ln*7,20,2);
+
+  // Mara working — slight bob
+  const maraY = H-228 + Math.sin(f*0.04)*2;
+  drawMara(W/2-60, maraY, 'stand');
+
+  // Subtle ocean reflections
+  ctx.fillStyle='rgba(59,158,255,0.04)';
+  for(let i=0;i<4;i++){
+    ctx.fillRect(((i*110+f*0.5)%W), H-160, 60, 12);
+  }
+}
+
+// Scene 2: The argument / push
+function drawScene_Argument(f) {
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#020406'); g.addColorStop(1,'#080f1a');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  drawStars(88, 0.6);
+  drawMoon(380, 60, 22, 0.7);
+  drawWaterSurface(H-180);
+  drawDock();
+
+  // Tension: red ambient cast
+  ctx.fillStyle='rgba(200,40,0,0.04)';
+  ctx.fillRect(0,0,W,H);
+
+  // Antagonist — pushing pose (leaning forward)
+  drawAntag(W/2-10, H-300);
+
+  // Mara — at the railing edge, arms out (falling pose but still on dock)
+  const lean = Math.min(f * 0.015, 0.35);
+  ctx.save(); ctx.translate(W/2+70, H-280); ctx.rotate(lean);
+  ctx.globalAlpha = 1;
+  // body
+  ctx.fillStyle='#1a3d70'; ctx.fillRect(-6, 2, 12, 16);
+  ctx.fillStyle='#2a5fa8'; ctx.fillRect(-8,-6,16,12);
+  ctx.fillStyle='#2a5fa8'; ctx.fillRect(-20,-4,14,6); ctx.fillRect(6,-4,14,6);
+  ctx.fillStyle='#e8c4a0'; ctx.fillRect(-8,-20,16,16);
+  ctx.fillStyle='#2a1808'; ctx.fillRect(-8,-22,16,6); ctx.fillRect(6,-20,3,10);
+  ctx.restore();
+
+  // Railing gap highlight — she's at the edge
+  ctx.fillStyle='rgba(255,100,40,0.18)';
+  ctx.fillRect(W/2+50, H-318, 40, 64);
+
+  // Speech bubble (antagonist)
+  if (f > 30) {
+    const bAlpha = Math.min((f-30)/20, 1);
+    ctx.globalAlpha = bAlpha;
+    ctx.fillStyle='rgba(30,30,40,0.85)';
+    ctx.beginPath();
+    ctx.roundRect(W/2-130, H-390, 120, 44, 8);
+    ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,0.08)';
+    ctx.beginPath(); ctx.roundRect(W/2-130,H-390,120,44,8); ctx.fill();
+    // tail
+    ctx.fillStyle='rgba(30,30,40,0.85)';
+    ctx.beginPath(); ctx.moveTo(W/2-70,H-346); ctx.lineTo(W/2-60,H-336); ctx.lineTo(W/2-50,H-346); ctx.closePath(); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,0.7)';
+    ctx.font='500 11px DM Sans'; ctx.textAlign='center';
+    ctx.fillText('"Your research is', W/2-70, H-372);
+    ctx.fillText('over, Solís."', W/2-70, H-358);
+    ctx.textAlign='left';
+    ctx.globalAlpha=1;
+  }
+}
+
+// Scene 3: Sinking into the deep
+function drawScene_Sinking(f) {
+  // Deep ocean gradient — get darker further we go
+  const depth = Math.min(f*0.8, 255);
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,`rgb(${Math.max(0,10-depth*0.04)},${Math.max(0,20-depth*0.05)},${Math.max(0,40-depth*0.06)})`);
+  g.addColorStop(1,'#000306');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+
+  // Distant surface light (fading)
+  const surfAlpha = Math.max(0, 1 - f/120);
+  const surfGlow = ctx.createRadialGradient(W/2, 0, 0, W/2, 0, 200);
+  surfGlow.addColorStop(0,`rgba(40,100,200,${surfAlpha*0.25})`);
+  surfGlow.addColorStop(1,'transparent');
+  ctx.fillStyle=surfGlow; ctx.fillRect(0,0,W,200);
+
+  // Surface ripple (far above)
+  if (surfAlpha > 0) {
+    ctx.globalAlpha = surfAlpha;
+    ctx.fillStyle='rgba(80,160,255,0.15)';
+    ctx.fillRect(0, 0, W, 12);
+    ctx.globalAlpha=1;
+  }
+
+  // Floating debris / bubbles rising
+  for (let i=0; i<12; i++){
+    const bx = (i*47+f*0.3)%W;
+    const by = ((i*83 - f*1.2 + H) % H);
+    const br = 1+i%3;
+    ctx.strokeStyle=`rgba(100,190,255,${0.15+i%3*0.08})`;
+    ctx.lineWidth=1;
+    ctx.beginPath(); ctx.arc(bx, by, br, 0,Math.PI*2); ctx.stroke();
+  }
+
+  // Deep-sea bioluminescent particles
+  for (let i=0;i<8;i++){
+    const gx=(i*70+f*.2)%W, gy=(i*90+f*.15)%H;
+    ctx.fillStyle=`rgba(0,255,160,${0.04+Math.sin(f*.05+i)*.03})`;
+    ctx.beginPath(); ctx.arc(gx,gy,3+i%4,0,Math.PI*2); ctx.fill();
+  }
+
+  // Mara falling — position moves down
+  const maraFallY = 80 + Math.min(f*2.2, H-200);
+  const fallRotate = Math.sin(f*0.08)*0.3;
+  ctx.save();
+  ctx.translate(W/2, maraFallY);
+  ctx.rotate(fallRotate);
+  // coat
+  ctx.fillStyle='#1a3d70'; ctx.fillRect(-6,4,12,18);
+  ctx.fillStyle='#2a5fa8'; ctx.fillRect(-8,-8,16,14);
+  // arms splayed
+  ctx.fillStyle='#2a5fa8';
+  ctx.fillRect(-22,-6,16,6); ctx.fillRect(6,-6,16,6);
+  // head
+  ctx.fillStyle='#e8c4a0'; ctx.fillRect(-8,-22,16,16);
+  ctx.fillStyle='#2a1808'; ctx.fillRect(-8,-24,16,6); ctx.fillRect(6,-22,3,10);
+  // panicked eyes
+  ctx.fillStyle='#1a1a28'; ctx.fillRect(-5,-18,4,4); ctx.fillRect(1,-18,4,4);
+  ctx.fillStyle='#fff'; ctx.fillRect(-4,-17,2,2); ctx.fillRect(2,-17,2,2);
+  ctx.restore();
+
+  // Trail bubbles from Mara
+  for(let i=0;i<4;i++){
+    const tb = Math.max(0, maraFallY - i*12 - 10);
+    ctx.strokeStyle=`rgba(140,210,255,${0.3-i*0.06})`;
+    ctx.lineWidth=1;
+    ctx.beginPath(); ctx.arc(W/2+(i%2===0?8:-8), tb, 3-i*0.5, 0, Math.PI*2); ctx.stroke();
+  }
+
+  // Crushing darkness vignette
+  const vign = ctx.createRadialGradient(W/2,H/2,100,W/2,H/2,300);
+  vign.addColorStop(0,'transparent');
+  vign.addColorStop(1,`rgba(0,1,6,${Math.min(0.7, f/200)})`);
+  ctx.fillStyle=vign; ctx.fillRect(0,0,W,H);
+}
+
+// Scene 4: Deity appears
+function drawScene_Deity(f) {
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#000204'); g.addColorStop(1,'#000810');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+
+  // The deity — vast, glowing form
+  const deityAppear = Math.min(f/60, 1);
+  const pulse = Math.sin(f*0.06)*0.15+0.85;
+
+  // Outer aura rings
+  for (let ring=3;ring>=0;ring--) {
+    const r = 80+ring*50;
+    const gg = ctx.createRadialGradient(W/2, H*0.38, 0, W/2, H*0.38, r);
+    gg.addColorStop(0,`rgba(160,100,255,${deityAppear*0.06*pulse})`);
+    gg.addColorStop(0.5,`rgba(80,60,200,${deityAppear*0.04*pulse})`);
+    gg.addColorStop(1,'transparent');
+    ctx.fillStyle=gg; ctx.fillRect(0,0,W,H);
+  }
+
+  // Deity body — ancient, abstract form (tall, robed, glowing)
+  ctx.globalAlpha = deityAppear;
+
+  // Flowing robe / tendrils
+  const tentCount = 6;
+  for(let i=0;i<tentCount;i++){
+    const tx = W/2 + Math.sin(f*0.04+i*1.05)*60;
+    const ty = H*0.32 + 100 + i*12;
+    ctx.strokeStyle=`rgba(140,80,255,${0.15+Math.sin(f*0.07+i)*0.08})`;
+    ctx.lineWidth=2+i%2;
+    ctx.beginPath();
+    ctx.moveTo(W/2, H*0.32+80);
+    ctx.quadraticCurveTo(W/2+Math.sin(f*0.05+i)*40, ty-30, tx, ty+40);
+    ctx.stroke();
+  }
+
+  // Core body
+  ctx.fillStyle=`rgba(20,10,40,0.9)`;
+  ctx.beginPath(); ctx.ellipse(W/2, H*0.32, 38, 90, 0, 0, Math.PI*2); ctx.fill();
+
+  // Inner glow
+  const deityCore = ctx.createRadialGradient(W/2,H*0.32,0,W/2,H*0.32,38);
+  deityCore.addColorStop(0,`rgba(200,160,255,${0.7*pulse})`);
+  deityCore.addColorStop(0.5,`rgba(120,80,220,${0.4*pulse})`);
+  deityCore.addColorStop(1,'transparent');
+  ctx.fillStyle=deityCore; ctx.beginPath(); ctx.ellipse(W/2,H*0.32,38,90,0,0,Math.PI*2); ctx.fill();
+
+  // Face — two ancient glowing eyes
+  const eyePulse = (Math.sin(f*0.1)+1)*0.5;
+  ctx.fillStyle=`rgba(220,180,255,${0.8+eyePulse*0.2})`;
+  ctx.beginPath(); ctx.ellipse(W/2-14, H*0.32-20, 7, 4, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(W/2+14, H*0.32-20, 7, 4, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle='#fff';
+  ctx.beginPath(); ctx.arc(W/2-14,H*0.32-20,2,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(W/2+14,H*0.32-20,2,0,Math.PI*2); ctx.fill();
+
+  // Ancient sigil / symbol below
+  if(deityAppear > 0.5) {
+    const sAlpha = (deityAppear-0.5)*2*pulse;
+    ctx.strokeStyle=`rgba(180,140,255,${sAlpha*0.5})`;
+    ctx.lineWidth=1;
+    // circle
+    ctx.beginPath(); ctx.arc(W/2, H*0.32+55, 28, 0, Math.PI*2); ctx.stroke();
+    // inner lines
+    for(let i=0;i<6;i++){
+      const ang = (i/6)*Math.PI*2+f*0.01;
+      ctx.beginPath();
+      ctx.moveTo(W/2+Math.cos(ang)*12, H*0.32+55+Math.sin(ang)*12);
+      ctx.lineTo(W/2+Math.cos(ang)*28, H*0.32+55+Math.sin(ang)*28);
+      ctx.stroke();
+    }
+  }
+
+  ctx.globalAlpha=1;
+
+  // Mara — floating below, stunned
+  const maraY = H-260 + Math.sin(f*0.04)*6;
+  ctx.globalAlpha=Math.min(deityAppear*2,1);
+  ctx.save(); ctx.translate(W/2, maraY); ctx.rotate(Math.sin(f*0.03)*0.08);
+  ctx.fillStyle='#1a3d70'; ctx.fillRect(-6,4,12,18);
+  ctx.fillStyle='#2a5fa8'; ctx.fillRect(-8,-8,16,14);
+  ctx.fillStyle='#2a5fa8'; ctx.fillRect(-18,-6,12,6); ctx.fillRect(6,-6,12,6);
+  ctx.fillStyle='#e8c4a0'; ctx.fillRect(-8,-22,16,16);
+  ctx.fillStyle='#2a1808'; ctx.fillRect(-8,-24,16,6); ctx.fillRect(6,-22,3,10);
+  // awe-struck eyes (wide)
+  ctx.fillStyle='#1a1a28'; ctx.fillRect(-5,-18,5,5); ctx.fillRect(1,-18,5,5);
+  ctx.fillStyle='#fff'; ctx.fillRect(-4,-17,3,3); ctx.fillRect(2,-17,3,3);
+  ctx.restore();
+  ctx.globalAlpha=1;
+
+  // Light beam from deity to Mara
+  if(f>40){
+    const beamAlpha = Math.min((f-40)/30,1)*0.12*pulse;
+    const bGrad = ctx.createLinearGradient(W/2,H*0.32+90,W/2,maraY-10);
+    bGrad.addColorStop(0,`rgba(200,160,255,${beamAlpha})`);
+    bGrad.addColorStop(1,'transparent');
+    ctx.fillStyle=bGrad;
+    ctx.beginPath();
+    ctx.moveTo(W/2-20,H*0.32+90); ctx.lineTo(W/2+20,H*0.32+90);
+    ctx.lineTo(W/2+10,maraY-10); ctx.lineTo(W/2-10,maraY-10);
+    ctx.closePath(); ctx.fill();
+  }
+
+  // Deep ocean floor hint
+  ctx.fillStyle='#020510'; ctx.fillRect(0,H-40,W,40);
+  ctx.fillStyle='rgba(40,20,80,0.3)'; ctx.fillRect(0,H-42,W,4);
+}
+
+// Scene 5: The gift — mask and jetpack appear
+function drawScene_Gift(f) {
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#020408'); g.addColorStop(1,'#050d1a');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+
+  // Residual deity glow fading
+  const deityGlow = Math.max(0, 1-f/80);
+  if(deityGlow>0){
+    const dg = ctx.createRadialGradient(W/2,H*0.2,0,W/2,H*0.2,180);
+    dg.addColorStop(0,`rgba(140,80,255,${deityGlow*0.12})`);
+    dg.addColorStop(1,'transparent');
+    ctx.fillStyle=dg; ctx.fillRect(0,0,W,H);
+  }
+
+  // Ocean particles
+  for(let i=0;i<16;i++){
+    const bx=(i*33+f*.4)%W, by=((i*67-f*.8+H)%H);
+    ctx.fillStyle=`rgba(80,160,255,${0.06+i%3*0.02})`;
+    ctx.beginPath(); ctx.arc(bx,by,1.5,0,Math.PI*2); ctx.fill();
+  }
+
+  // Mara — now with mask and jetpack (gifts phase in)
+  const giftAlpha = Math.min(f/50, 1);
+  const maraY = H-270 + Math.sin(f*0.05)*4;
+  const cx2 = W/2;
+
+  // Jetpack glow
+  if(giftAlpha > 0.3){
+    const jgAlpha = (giftAlpha-0.3)/0.7;
+    ctx.fillStyle=`rgba(255,140,0,${jgAlpha*0.15})`;
+    ctx.beginPath(); ctx.ellipse(cx2+14,maraY-5,20,30,0,0,Math.PI*2); ctx.fill();
+    // thrust
+    if(f%6<3){
+      ctx.fillStyle=`rgba(255,160,0,${jgAlpha*0.4})`;
+      ctx.beginPath(); ctx.arc(cx2+14,maraY+22,7,0,Math.PI*2); ctx.fill();
+    }
+  }
+
+  ctx.save(); ctx.translate(cx2, maraY);
+
+  // Jetpack (behind body)
+  ctx.globalAlpha=giftAlpha;
+  ctx.fillStyle='#e07800'; ctx.fillRect(10,-14,9,22);
+  ctx.fillStyle='#ffaa33'; ctx.fillRect(12,6,5,7);
+  ctx.globalAlpha=1;
+
+  // Body
+  ctx.fillStyle='#0d44c0'; ctx.fillRect(-6,4,12,16);
+  ctx.fillStyle='#1a6fff'; ctx.fillRect(-8,-8,16,14);
+  ctx.fillStyle='rgba(255,255,255,0.1)'; ctx.fillRect(-6,-6,8,6);
+  ctx.fillStyle='#0d44c0'; ctx.fillRect(-18,-6,12,6); ctx.fillRect(6,-6,12,6);
+
+  // Head with mask phasing in
+  ctx.fillStyle='#e8c4a0'; ctx.fillRect(-8,-22,16,16);
+  ctx.fillStyle='#2a1808'; ctx.fillRect(-8,-24,16,6); ctx.fillRect(6,-22,3,10);
+
+  // Mask
+  ctx.globalAlpha=giftAlpha;
+  ctx.fillStyle='#d6f0ff'; ctx.fillRect(-10,-24,20,18);
+  ctx.fillStyle='rgba(59,158,255,0.3)'; ctx.fillRect(-8,-22,16,14);
+  ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.fillRect(-6,-20,5,5);
+  ctx.fillStyle='#557'; ctx.fillRect(-12,-12,3,7); ctx.fillRect(9,-12,3,7);
+  ctx.globalAlpha=1;
+
+  ctx.restore();
+
+  // Gift particles — orbiting
+  if(giftAlpha>0){
+    for(let i=0;i<8;i++){
+      const ang = (i/8)*Math.PI*2 + f*0.04;
+      const pr = 55+Math.sin(f*0.1+i)*8;
+      const gpx = cx2+Math.cos(ang)*pr;
+      const gpy = maraY+Math.sin(ang)*pr*0.4;
+      const ps = 2+i%2;
+      ctx.fillStyle=`rgba(59,158,255,${giftAlpha*(0.4+Math.sin(f*.1+i)*.2)})`;
+      ctx.beginPath(); ctx.arc(gpx,gpy,ps,0,Math.PI*2); ctx.fill();
+    }
+  }
+
+  // Bottom — she's now ready to run
+  if(f > 80){
+    const readyAlpha = Math.min((f-80)/40,1);
+    // Forward motion hint — speed lines
+    for(let i=0;i<6;i++){
+      const lx = (W/2-150) + i*60;
+      const ly = maraY+30;
+      ctx.strokeStyle=`rgba(59,158,255,${readyAlpha*0.18})`;
+      ctx.lineWidth=1;
+      ctx.setLineDash([8,12]);
+      ctx.beginPath(); ctx.moveTo(lx,ly); ctx.lineTo(lx+40,ly); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  // Floor hint
+  ctx.fillStyle='#030810'; ctx.fillRect(0,H-40,W,40);
+  ctx.fillStyle='rgba(59,158,255,0.08)'; ctx.fillRect(0,H-42,W,3);
+}
+
+// ─────────────────────────────────────────────
+//  GAME BG
+// ─────────────────────────────────────────────
+function drawBG() {
+  const p=PALETTES[biome];
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,p.bg0); g.addColorStop(1,p.bg1);
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+
+  if(biome===0) {
+    for(let i=0;i<5;i++){
+      ctx.fillStyle='rgba(59,158,255,.022)';
+      ctx.beginPath();
+      ctx.ellipse((i*110+frame*.4)%W,(i*120+frame*.22)%(H*.85),44+i*10,9+i*3,frame*.005+i*.6,0,Math.PI*2);
+      ctx.fill();
+    }
+    parts.forEach(p=>{
+      ctx.fillStyle=`rgba(100,190,255,${.1+p.r*.03})`;
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
+    });
+  } else if(biome===1) {
+    const lg=ctx.createLinearGradient(0,H-80,0,H);
+    lg.addColorStop(0,'rgba(255,80,0,0)'); lg.addColorStop(1,'rgba(255,90,0,.14)');
+    ctx.fillStyle=lg; ctx.fillRect(0,H-80,W,80);
+    parts.forEach(p=>{
+      ctx.fillStyle='rgba(255,110,30,.06)';
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r*2.5,0,Math.PI*2); ctx.fill();
+    });
+  } else {
+    parts.forEach(p=>{
+      ctx.fillStyle=`rgba(170,218,255,${p.r*.055})`;
+      ctx.fillRect(p.x,p.y,2,2);
+    });
+    const ig=ctx.createLinearGradient(0,0,0,50);
+    ig.addColorStop(0,'rgba(126,207,255,.07)'); ig.addColorStop(1,'transparent');
+    ctx.fillStyle=ig; ctx.fillRect(0,0,W,50);
+  }
+
+  ctx.fillStyle=p.fl; ctx.fillRect(0,H-60,W,60);
+  ctx.fillStyle=p.fle; ctx.fillRect(0,H-62,W,2);
+
+  if(biome===1){
+    ctx.fillStyle='#f54400'; ctx.fillRect(0,H-18,W,18);
+    ctx.fillStyle='#ff7700'; ctx.fillRect(0,H-20,W,3);
+    for(let i=0;i<4;i++){
+      ctx.fillStyle='rgba(255,190,60,.22)';
+      ctx.fillRect(((i*120+frame*2.4)%(W+60))-40,H-17,44,5);
+    }
+  }
+
+  ctx.strokeStyle=p.ld; ctx.lineWidth=1;
+  ctx.setLineDash([7,16]);
+  ctx.lineDashOffset=-(frame*spd*.75)%23;
+  [W/2-60,W/2+60].forEach(lx=>{
+    ctx.beginPath(); ctx.moveTo(lx,0); ctx.lineTo(lx,H-60); ctx.stroke();
+  });
+  ctx.setLineDash([]); ctx.lineDashOffset=0;
+}
+
+// ─────────────────────────────────────────────
+//  PLAYER
+// ─────────────────────────────────────────────
+function drawPlayer(x,y) {
+  const bob=Math.sin(panim)*(biome===0?3.5:1.8);
+  x=Math.round(x); y=Math.round(y+bob);
+  const suits=['#1a6fff','#c94000','#2a80ff'];
+  const darks=['#0d44c0','#8c2d00','#1a60cc'];
+  const s=suits[biome], d=darks[biome];
+  if(biome===0){
+    ctx.fillStyle='#e07800'; ctx.fillRect(x+10,y-14,9,22);
+    ctx.fillStyle='#ffaa33'; ctx.fillRect(x+12,y+6,5,7);
+    if(frame%4<2){ ctx.fillStyle='rgba(255,155,0,.45)'; ctx.beginPath(); ctx.arc(x+14,y+13,5,0,Math.PI*2); ctx.fill(); }
+  }
+  ctx.fillStyle=d; ctx.fillRect(x-10,y+12,8,13); ctx.fillRect(x+2,y+12,8,13);
+  if(biome===0){ ctx.fillStyle='#00b8ff'; ctx.fillRect(x-14,y+22,13,4); ctx.fillRect(x+1,y+22,13,4); }
+  else { ctx.fillStyle=biome===1?'#5c1e00':'#1a55cc'; ctx.fillRect(x-12,y+23,10,4); ctx.fillRect(x+2,y+23,10,4); }
+  ctx.fillStyle=s; ctx.fillRect(x-12,y-10,24,22);
+  ctx.fillStyle='rgba(255,255,255,.1)'; ctx.fillRect(x-10,y-8,9,7);
+  ctx.fillStyle=d; ctx.fillRect(x-21,y-8,10,6); ctx.fillRect(x+11,y-8,10,6);
+  if(biome===0){
+    ctx.fillStyle='#d6f0ff'; ctx.fillRect(x-12,y-28,24,20);
+    ctx.fillStyle='rgba(59,158,255,.3)'; ctx.fillRect(x-10,y-26,20,16);
+    ctx.fillStyle='rgba(255,255,255,.22)'; ctx.fillRect(x-8,y-24,6,5);
+    ctx.fillStyle='#556'; ctx.fillRect(x-14,y-14,3,8); ctx.fillRect(x+11,y-14,3,8);
+  } else {
+    ctx.fillStyle='#e8c4a0'; ctx.fillRect(x-10,y-26,20,18);
+    ctx.fillStyle='#1a1a28'; ctx.fillRect(x-6,y-22,4,4); ctx.fillRect(x+2,y-22,4,4);
+    ctx.fillStyle='#fff'; ctx.fillRect(x-5,y-21,2,2); ctx.fillRect(x+3,y-21,2,2);
+    ctx.fillStyle='#2a1808'; ctx.fillRect(x-10,y-28,20,5);
+  }
+  if(biome===0&&frame%16<5){ ctx.strokeStyle='rgba(130,215,255,.38)'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(x+15,y-22,3,0,Math.PI*2); ctx.stroke(); }
+}
+
+// ─────────────────────────────────────────────
+//  CHASER
+// ─────────────────────────────────────────────
+function drawChaser(x,y) {
+  x=Math.round(x); y=Math.round(y);
+  const bob=Math.sin(frame*.14)*5;
+  if(biome===0){
+    const sw=Math.sin(frame*.18)*7;
+    ctx.fillStyle='#1c4a76';
+    ctx.beginPath(); ctx.moveTo(x-36,y+sw*.5); ctx.lineTo(x-58,y-16+sw); ctx.lineTo(x-52,y+sw*.5); ctx.lineTo(x-58,y+16+sw); ctx.closePath(); ctx.fill();
+    ctx.fillStyle='#286090'; ctx.beginPath(); ctx.ellipse(x,y,42,15,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#c0e0ee'; ctx.beginPath(); ctx.ellipse(x+5,y+6,26,7,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#1c4a76'; ctx.beginPath(); ctx.moveTo(x-2,y-14); ctx.lineTo(x+14,y-30); ctx.lineTo(x+22,y-14); ctx.closePath(); ctx.fill();
+    ctx.fillStyle='#1c4a76'; ctx.beginPath(); ctx.moveTo(x-5,y+6); ctx.lineTo(x-20,y+22); ctx.lineTo(x+5,y+10); ctx.closePath(); ctx.fill();
+    ctx.fillStyle='#080814'; ctx.beginPath(); ctx.arc(x+22,y-4,5,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(x+23,y-5,2,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#fff';
+    for(let i=0;i<4;i++){ ctx.beginPath(); ctx.moveTo(x+22+i*5,y+6); ctx.lineTo(x+24+i*5,y+12); ctx.lineTo(x+26+i*5,y+6); ctx.closePath(); ctx.fill(); }
+  } else if(biome===1){
+    const lb=bob;
+    ctx.fillStyle='rgba(255,70,0,.1)'; ctx.beginPath(); ctx.ellipse(x,y-20+lb,50,44,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#170600'; ctx.fillRect(x-28,y-52+lb,56,66);
+    ctx.fillStyle='#ff4d00'; ctx.fillRect(x-18,y-44+lb,6,26); ctx.fillRect(x+6,y-38+lb,6,30); ctx.fillRect(x-10,y-18+lb,20,4);
+    ctx.fillStyle='#ff8000'; ctx.fillRect(x-15,y-40+lb,3,12); ctx.fillRect(x+8,y-34+lb,3,16);
+    ctx.fillStyle='#ff1e00'; ctx.fillRect(x-18,y-38+lb,10,10); ctx.fillRect(x+8,y-38+lb,10,10);
+    ctx.fillStyle='#ffc800'; ctx.fillRect(x-15,y-35+lb,4,4); ctx.fillRect(x+11,y-35+lb,4,4);
+    ctx.fillStyle='#170600'; ctx.fillRect(x-52,y-24+lb,26,14); ctx.fillRect(x+26,y-24+lb,26,14);
+    ctx.fillStyle='#ff3e00'; ctx.fillRect(x-50,y-22+lb,8,6); ctx.fillRect(x+42,y-22+lb,8,6);
+  } else {
+    const ib=bob;
+    ctx.fillStyle='rgba(126,207,255,.07)'; ctx.beginPath(); ctx.ellipse(x,y-20+ib,46,42,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#18304e'; ctx.fillRect(x-26,y-50+ib,52,62);
+    ctx.fillStyle='#4888cc'; ctx.fillRect(x-18,y-44+ib,8,20); ctx.fillRect(x+4,y-40+ib,8,24); ctx.fillRect(x-6,y-30+ib,12,4);
+    ctx.fillStyle='#8ecfff'; ctx.fillRect(x-15,y-40+ib,4,10); ctx.fillRect(x+7,y-36+ib,4,14);
+    ctx.fillStyle='#62b0ee';
+    [[-10,-18],[0,-22],[10,-18]].forEach(([sx,sy])=>{ ctx.beginPath(); ctx.moveTo(x+sx-5,y-50+ib); ctx.lineTo(x+sx+5,y-50+ib); ctx.lineTo(x+sx,y+sy-50+ib); ctx.closePath(); ctx.fill(); });
+    ctx.fillStyle='#0055ee'; ctx.fillRect(x-16,y-36+ib,10,10); ctx.fillRect(x+6,y-36+ib,10,10);
+    ctx.fillStyle='#aadbff'; ctx.fillRect(x-13,y-33+ib,4,4); ctx.fillRect(x+9,y-33+ib,4,4);
+    ctx.fillStyle='#18304e'; ctx.fillRect(x-48,y-22+ib,24,12); ctx.fillRect(x+24,y-22+ib,24,12);
+    ctx.fillStyle='#4888cc'; ctx.fillRect(x-46,y-20+ib,8,6); ctx.fillRect(x+38,y-20+ib,8,6);
+  }
+}
+
+// ─────────────────────────────────────────────
+//  OBSTACLES
+// ─────────────────────────────────────────────
+function drawObs(o) {
+  const x=Math.round(o.x), y=Math.round(o.y);
+  if(biome===0){
+    if(o.type===0){
+      ctx.fillStyle='#be2f5e'; ctx.fillRect(x-10,y-32,7,32); ctx.fillRect(x+3,y-44,7,44); ctx.fillRect(x-20,y-22,7,22);
+      ctx.fillStyle='#dc4870'; ctx.fillRect(x-10,y-36,5,6); ctx.fillRect(x+3,y-48,5,6); ctx.fillRect(x-20,y-26,5,6);
+    } else {
+      ctx.fillStyle='rgba(155,75,235,.6)'; ctx.beginPath(); ctx.ellipse(x,y-20,18,14,0,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='rgba(195,145,255,.28)'; ctx.beginPath(); ctx.ellipse(x-4,y-24,8,6,0,0,Math.PI*2); ctx.fill();
+      for(let i=-2;i<=2;i++){
+        ctx.strokeStyle=`rgba(195,125,255,${.28+Math.sin(frame*.1+i)*.08})`; ctx.lineWidth=1.5;
+        ctx.beginPath(); ctx.moveTo(x+i*6,y-7); ctx.quadraticCurveTo(x+i*6+Math.sin(frame*.1+i)*5,y+8,x+i*7,y+22); ctx.stroke();
+      }
+    }
+  } else if(biome===1){
+    ctx.fillStyle='#260900'; ctx.fillRect(x-12,y-54,24,54);
+    ctx.fillStyle='#c02e00'; ctx.fillRect(x-6,y-48,3,28); ctx.fillRect(x+2,y-40,3,22);
+    ctx.fillStyle='#ff3e00'; ctx.beginPath(); ctx.ellipse(x,y-58,10,8,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#ff7700'; ctx.beginPath(); ctx.ellipse(x,y-62,6,6,0,0,Math.PI*2); ctx.fill();
+    if(frame%5<3){ ctx.fillStyle='#ffc000'; ctx.beginPath(); ctx.ellipse(x,y-66,3,4,0,0,Math.PI*2); ctx.fill(); }
+  } else {
+    ctx.fillStyle='#1c3d5c';
+    ctx.beginPath(); ctx.moveTo(x-14,y-52); ctx.lineTo(x+14,y-52); ctx.lineTo(x+8,y-32); ctx.lineTo(x,y); ctx.lineTo(x-8,y-32); ctx.closePath(); ctx.fill();
+    ctx.fillStyle='#56aadc';
+    ctx.beginPath(); ctx.moveTo(x-5,y-50); ctx.lineTo(x-2,y-50); ctx.lineTo(x-1,y-10); ctx.lineTo(x-4,y-10); ctx.closePath(); ctx.fill();
+    ctx.fillStyle='#aadbff'; ctx.fillRect(x-2,y-3,4,4);
+  }
+}
+
+// ─────────────────────────────────────────────
+//  ORBS
+// ─────────────────────────────────────────────
+function drawOrb(o) {
+  const x=Math.round(o.x), y=Math.round(o.y);
+  const p=PALETTES[biome];
+  const r=7+Math.sin(frame*.14+o.off)*2.5;
+  const gr=ctx.createRadialGradient(x,y,0,x,y,r*2.5);
+  gr.addColorStop(0,p.glow); gr.addColorStop(1,'transparent');
+  ctx.fillStyle=gr; ctx.beginPath(); ctx.arc(x,y,r*2.5,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=p.acc; ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,.55)'; ctx.beginPath(); ctx.arc(x-2,y-2,r*.36,0,Math.PI*2); ctx.fill();
+}
+
+// ─────────────────────────────────────────────
+//  BIOME TRANSITION
+// ─────────────────────────────────────────────
+function drawTrans() {
+  if(!trans) return;
+  ctx.fillStyle=`rgba(4,7,14,${ta})`; ctx.fillRect(0,0,W,H);
+  if(ta>=.97 && td===1){ biome=(biome+1)%3; spawnParts(); updateBiomeUI(); td=-1; }
+  ta=Math.max(0,Math.min(1,ta+td*.034));
+  if(td===-1&&ta<=0){ trans=false; td=1; }
+}
+
+// ─────────────────────────────────────────────
+//  HELPERS
+// ─────────────────────────────────────────────
+function updateBiomeUI() {
+  const p=PALETTES[biome];
+  bdot.style.background=p.acc; bname.textContent=BNAMES[biome];
+  bname.style.color=p.acc; progFill.style.background=p.acc;
+}
+
+function spawnParts() {
+  parts=Array.from({length:26},()=>({
+    x:Math.random()*W, y:Math.random()*H, r:Math.random()*3+1,
+    vy:biome===2?Math.random()*.6+.2:-(Math.random()*.9+.2)
+  }));
+}
+
+function overlap(ax,ay,aw,ah,bx,by,bw,bh){ return ax<bx+bw&&ax+aw>bx&&ay<by+bh&&ay+ah>by; }
+
+function checkHits(){
+  const hx=px-10,hy=py-24,hw=20,hh=48;
+  for(let o of obs) if(overlap(hx,hy,hw,hh,o.x-12,o.y-50,24,50)){ die(); return; }
+  orbs=orbs.filter(o=>{ if(overlap(hx,hy,hw,hh,o.x-8,o.y-8,16,16)){score+=5;return false;} return true; });
+  if(cx>px-55) die();
+}
+
+// ─────────────────────────────────────────────
+//  GAME FLOW
+// ─────────────────────────────────────────────
+function startGame(){
+  sStart.classList.remove('on'); sOver.classList.remove('on');
+  csEl.classList.add('hidden');
+  hudEl.classList.add('on');
+  state='playing'; score=0; spd=2; frame=0;
+  biome=0; bt=0; pl=1; plt=1;
+  px=LX[1]; py=H-130; panim=0;
+  obs=[]; orbs=[]; cx=-140; cy=H-130;
+  trans=false; ta=0; td=1;
+  spawnParts(); updateBiomeUI();
+}
+
+function die(){
+  if(state!=='playing') return;
+  state='dead'; if(score>hi) hi=score;
+  hudEl.classList.remove('on');
+  sOver.classList.add('on');
+  goScore.textContent=score; goBest.textContent=hi;
+}
+
+// ─────────────────────────────────────────────
+//  UPDATE
+// ─────────────────────────────────────────────
+function update(){
+  if(state==='cutscene'){ updateCutscene(); return; }
+  if(state!=='playing'){frame++;return;}
+  frame++; score=Math.floor(frame/5); spd=2+frame*.0008; panim+=.1;
+  const tx=LX[plt]; px+=(tx-px)*.17;
+  if(Math.abs(px-tx)<1){px=tx;pl=plt;}
+  if(!trans){bt++;if(bt>=BD){bt=0;trans=true;}}
+  if(frame%Math.max(100-Math.floor(spd*4),38)===0) obs.push({x:LX[Math.floor(Math.random()*3)],y:-60,type:Math.round(Math.random())});
+  if(frame%38===0) orbs.push({x:LX[Math.floor(Math.random()*3)],y:-30,off:Math.random()*Math.PI*2});
+  obs.forEach(o=>o.y+=spd); orbs.forEach(o=>o.y+=spd);
+  obs=obs.filter(o=>o.y<H+80); orbs=orbs.filter(o=>o.y<H+80);
+  cx+=(px-170-cx)*.024; cy=py;
+  parts.forEach(p=>{p.y+=p.vy;if(p.y>H+5)p.y=-5;if(p.y<-5)p.y=H+5;});
+  checkHits();
+  hudScore.textContent=score; hudBest.textContent=hi;
+  progFill.style.width=(bt/BD*100)+'%';
+}
+
+// ─────────────────────────────────────────────
+//  DRAW
+// ─────────────────────────────────────────────
+function draw(){
+  ctx.clearRect(0,0,W,H);
+
+  if(state==='cutscene'){
+    SCENES[csScene].draw(csFrame);
+    return;
+  }
+  if(state==='menu'||state==='dead'){
+    const g=ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,'#060c1a'); g.addColorStop(1,'#08121e');
+    ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+    for(let i=0;i<5;i++){
+      ctx.fillStyle='rgba(40,110,210,.025)';
+      ctx.beginPath(); ctx.ellipse((i*110+frame*.3)%W,(i*130+frame*.2)%H,46,11,frame*.004+i,0,Math.PI*2); ctx.fill();
+    }
+    return;
+  }
+  drawBG();
+  orbs.forEach(drawOrb);
+  obs.forEach(drawObs);
+  drawChaser(cx,cy);
+  drawPlayer(px,py);
+  drawTrans();
+}
+
+// ─────────────────────────────────────────────
+//  BOOT
+// ─────────────────────────────────────────────
+// Start with cutscene immediately
+buildCsDots();
+csEl.classList.remove('hidden');
+loadCsScene();
+
+(function loop(){ update(); draw(); requestAnimationFrame(loop); })();
+</script>
+</body>
+</html>

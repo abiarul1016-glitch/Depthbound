@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Abyssal Run 3D</title>
+<style>
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: #000;
+    font-family: Arial, sans-serif;
+  }
+
+  #ui {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    color: white;
+    z-index: 10;
+  }
+
+  #gameOver {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    text-align: center;
+    display: none;
+  }
+
+  button {
+    padding: 10px 20px;
+    font-size: 16px;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <div>Score: <span id="score">0</span></div>
+  <div>Biome: <span id="biome">Ocean</span></div>
+</div>
+
+<div id="gameOver">
+  <h1>Game Over</h1>
+  <p>Press R to Restart</p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160/build/three.min.js"></script>
+
+<script>
+let scene, camera, renderer;
+let player;
+let obstacles = [];
+let lanes = [-4, 0, 4];
+let currentLane = 1;
+let speed = 0.6;
+let score = 0;
+let gameRunning = true;
+let biomeIndex = 0;
+let spawnTimer = 0;
+
+const biomeNames = ["Ocean", "Lava", "Ice"];
+const biomeSettings = [
+  { fog: 0x0a1a2f, bg: 0x07101e },
+  { fog: 0x551100, bg: 0x220400 },
+  { fog: 0xaadfff, bg: 0x112233 }
+];
+
+init();
+animate();
+
+function init() {
+  scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(biomeSettings[0].fog, 10, 80);
+
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 200);
+  camera.position.set(0, 6, 12);
+  camera.lookAt(0, 1, 0);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setClearColor(biomeSettings[0].bg);
+  document.body.appendChild(renderer.domElement);
+
+  const light = new THREE.DirectionalLight(0xffffff, 1);
+  light.position.set(0, 20, 10);
+  scene.add(light);
+
+  const ambient = new THREE.AmbientLight(0xffffff, 0.4);
+  scene.add(ambient);
+
+  createPlayer();
+  createGround();
+
+  window.addEventListener("resize", onResize);
+  window.addEventListener("keydown", onKey);
+}
+
+function createPlayer() {
+  const geo = new THREE.BoxGeometry(1, 2, 1);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x1a6fff });
+  player = new THREE.Mesh(geo, mat);
+  player.position.set(0, 1, 0);
+  scene.add(player);
+}
+
+function createGround() {
+  const geo = new THREE.PlaneGeometry(50, 200);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x0c223d });
+  const ground = new THREE.Mesh(geo, mat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.z = -80;
+  scene.add(ground);
+}
+
+function spawnObstacle() {
+  const geo = new THREE.BoxGeometry(2, 2, 2);
+  const mat = new THREE.MeshStandardMaterial({ color: 0xff6a20 });
+  const obs = new THREE.Mesh(geo, mat);
+
+  obs.position.set(
+    lanes[Math.floor(Math.random() * 3)],
+    1,
+    -80
+  );
+
+  scene.add(obs);
+  obstacles.push(obs);
+}
+
+function updateObstacles() {
+  for (let i = obstacles.length - 1; i >= 0; i--) {
+    const obs = obstacles[i];
+    obs.position.z += speed;
+
+    if (obs.position.z > 10) {
+      scene.remove(obs);
+      obstacles.splice(i, 1);
+      score++;
+      document.getElementById("score").innerText = score;
+    }
+
+    if (player.position.distanceTo(obs.position) < 1.5) {
+      endGame();
+    }
+  }
+}
+
+function updateBiome() {
+  if (score > 0 && score % 20 === 0) {
+    biomeIndex = (biomeIndex + 1) % biomeSettings.length;
+    scene.fog.color.set(biomeSettings[biomeIndex].fog);
+    renderer.setClearColor(biomeSettings[biomeIndex].bg);
+    document.getElementById("biome").innerText = biomeNames[biomeIndex];
+  }
+}
+
+function updatePlayer() {
+  player.position.x += (lanes[currentLane] - player.position.x) * 0.2;
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  if (gameRunning) {
+    spawnTimer++;
+    if (spawnTimer > 40) {
+      spawnObstacle();
+      spawnTimer = 0;
+    }
+
+    updatePlayer();
+    updateObstacles();
+    updateBiome();
+  }
+
+  renderer.render(scene, camera);
+}
+
+function onKey(e) {
+  if (!gameRunning && e.key.toLowerCase() === "r") {
+    restartGame();
+  }
+
+  if (!gameRunning) return;
+
+  if (e.key === "ArrowLeft" && currentLane > 0) {
+    currentLane--;
+  }
+
+  if (e.key === "ArrowRight" && currentLane < 2) {
+    currentLane++;
+  }
+}
+
+function endGame() {
+  gameRunning = false;
+  document.getElementById("gameOver").style.display = "block";
+}
+
+function restartGame() {
+  obstacles.forEach(o => scene.remove(o));
+  obstacles = [];
+  score = 0;
+  document.getElementById("score").innerText = score;
+  document.getElementById("gameOver").style.display = "none";
+  biomeIndex = 0;
+  scene.fog.color.set(biomeSettings[0].fog);
+  renderer.setClearColor(biomeSettings[0].bg);
+  document.getElementById("biome").innerText = biomeNames[0];
+  currentLane = 1;
+  gameRunning = true;
+}
+
+function onResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+</script>
+
+</body>
+</html>
